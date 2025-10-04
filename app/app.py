@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Body
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.responses import Response, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -121,13 +121,12 @@ async def health_check() -> Dict[str, str]:
 
 
 @app.post("/render")
-async def render_pdf(request: Request, raw_body: str = Body(..., media_type="application/json")) -> Response:
+async def render_pdf(request: Request) -> Response:
     """
     Render a document to PDF with auto-repair for malformed JSON.
     
     Args:
         request: FastAPI request object
-        raw_body: Raw request body (for auto-repair)
         
     Returns:
         PDF file as binary response
@@ -139,6 +138,10 @@ async def render_pdf(request: Request, raw_body: str = Body(..., media_type="app
     
     try:
         start_time = time.time()
+        
+        # Read raw body for auto-repair
+        raw_body = await request.body()
+        raw_body = raw_body.decode('utf-8')
         
         # Try to parse and repair JSON
         success, repaired_json, error = AutoRepair.repair_json(raw_body)
@@ -210,7 +213,7 @@ async def render_pdf(request: Request, raw_body: str = Body(..., media_type="app
 
 
 @app.post("/render-base64")
-async def render_pdf_base64(request: Request, raw_body: str = Body(..., media_type="application/json")) -> Dict[str, Any]:
+async def render_pdf_base64(request: Request) -> Dict[str, Any]:
     """
     Render a document to PDF and return as base64-encoded JSON with auto-repair.
     
@@ -218,7 +221,6 @@ async def render_pdf_base64(request: Request, raw_body: str = Body(..., media_ty
     
     Args:
         request: FastAPI request object
-        raw_body: Raw request body (for auto-repair)
         
     Returns:
         JSON with base64-encoded PDF and metadata
@@ -230,6 +232,10 @@ async def render_pdf_base64(request: Request, raw_body: str = Body(..., media_ty
     
     try:
         start_time = time.time()
+        
+        # Read raw body for auto-repair
+        raw_body = await request.body()
+        raw_body = raw_body.decode('utf-8')
         
         # Try to parse and repair JSON
         success, repaired_json, error = AutoRepair.repair_json(raw_body)
@@ -305,7 +311,7 @@ async def render_pdf_base64(request: Request, raw_body: str = Body(..., media_ty
 
 
 @app.post("/render-url")
-async def render_pdf_url(request: Request, raw_body: str = Body(..., media_type="application/json")) -> Dict[str, Any]:
+async def render_pdf_url(request: Request) -> Dict[str, Any]:
     """
     Render a document to PDF and return a temporary download URL with auto-repair.
     
@@ -314,7 +320,6 @@ async def render_pdf_url(request: Request, raw_body: str = Body(..., media_type=
     
     Args:
         request: FastAPI request object (to build absolute URL)
-        raw_body: Raw request body (for auto-repair)
         
     Returns:
         JSON with temporary URL to download the PDF
@@ -326,6 +331,10 @@ async def render_pdf_url(request: Request, raw_body: str = Body(..., media_type=
     
     try:
         start_time = time.time()
+        
+        # Read raw body for auto-repair
+        raw_body = await request.body()
+        raw_body = raw_body.decode('utf-8')
         
         # Try to parse and repair JSON
         success, repaired_json, error = AutoRepair.repair_json(raw_body)
