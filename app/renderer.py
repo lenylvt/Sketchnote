@@ -10,10 +10,20 @@ License: MIT
 import io
 import math
 import os
+import re
 import tempfile
 import urllib.request
 from pathlib import Path
-from typing import List, Tuple, Optional, List as ListType
+from typing import Dict, List, Tuple, Optional, List as ListType
+
+import matplotlib
+from matplotlib import mathtext, rcParams
+
+matplotlib.use("Agg")
+rcParams["mathtext.fontset"] = "stix"
+rcParams["font.family"] = "STIXGeneral"
+
+INLINE_MATH_PATTERN = re.compile(r"(?<!\\)\$(.+?)(?<!\\)\$")
 
 from reportlab.lib.pagesizes import A4, LETTER
 from reportlab.pdfgen import canvas
@@ -113,6 +123,12 @@ class PDFRenderer:
         """
         self.document = document
         self.buffer = io.BytesIO()
+
+        # Math rendering utilities
+        self._math_parser = mathtext.MathTextParser("agg")
+        self._math_dpi = 300
+        self._math_cache: Dict[Tuple[str, float, Tuple[float, float, float]], Tuple[bytes, float, float, float]] = {}
+        self._math_metrics_cache: Dict[Tuple[str, float], Tuple[float, float, float]] = {}
         
         # Page configuration
         if document.meta.page_size == "A4":
@@ -284,10 +300,12 @@ class PDFRenderer:
             # Calculate total text width for justification
             if len(lines) > 1 and not is_last_line:
                 # Justify (except last line)
-                total_text_width = sum(
-                    self.c.stringWidth(span.text, self._get_font_name(span), font_sizes.body)
-                    for span in line_spans
-                )
+                total_text_width = 0.0
+                for span in line_spans:
+                    if getattr(span, "math", False):
+                        total_text_width += self._measure_math_width(span.text, font_sizes.body)
+                    else:
+                        total_text_width += self.c.stringWidth(span.text, self._get_font_name(span), font_sizes.body)
                 extra_space = (self.content_width - total_text_width) / max(len(line_spans) - 1, 1)
             else:
                 # Left align for single-line or last line
@@ -316,6 +334,201 @@ class PDFRenderer:
             return self.custom_fonts.italic
         else:
             return self.custom_fonts.body
+
+    def _resolve_span_color(self, span: RichText, use_black: bool = False) -> Tuple[float, float, float]:
+        """Determine the RGB color for a span."""
+        if use_black:
+            return (0.0, 0.0, 0.0)
+        if span.color and span.color in TEXT_COLORS:
+            return TEXT_COLORS[span.color]
+        return colors.text_primary
+
+    @staticmethod
+    def _color_tuple_to_hex(color: Tuple[float, float, float]) -> str:
+        """Convert an RGB tuple (0-1) to hex string."""
+        r, g, b = [max(0, min(255, int(round(component * 255)))) for component in color]
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def _expand_inline_spans(self, spans: ListType[RichText]) -> ListType[RichText]:
+        """Expand spans to isolate inline math segments."""
+        expanded: ListType[RichText] = []
+        for span in spans:
+            expanded.extend(self._split_span_for_inline_math(span))
+        return expanded
+
+    def _split_span_for_inline_math(self, span: RichText) -> ListType[RichText]:
+        """Split a span into text and inline math segments."""
+        if getattr(span, "math", False):
+            return [span]
+
+        text = span.text
+        if not text or '$' not in text:
+            return [span]
+
+        placeholder = "\uF8FF"
+        sanitized = text.replace("\\$", placeholder)
+
+        segments: ListType[RichText] = []
+        last_index = 0
+        for match in INLINE_MATH_PATTERN.finditer(sanitized):
+            start, end = match.span()
+            if start > last_index:
+                prefix = sanitized[last_index:start].replace(placeholder, '$')
+                if prefix:
+                    segments.append(span.model_copy(update={"text": prefix, "math": False}))
+            formula = match.group(1)
+            if formula:
+                segments.append(span.model_copy(update={"text": formula.replace(placeholder, '$'), "math": True}))
+            last_index = end
+
+        if not segments:
+            return [span]
+
+        if last_index < len(sanitized):
+            suffix = sanitized[last_index:].replace(placeholder, '$')
+            if suffix:
+                segments.append(span.model_copy(update={"text": suffix, "math": False}))
+
+        return segments if segments else [span]
+
+    def _format_math_expression(self, latex: str) -> str:
+        """Ensure math expression is wrapped for MathText."""
+        expr = latex.strip()
+        if not expr:
+            return ""
+        if expr.startswith('$$') and expr.endswith('$$'):
+            return expr
+        if expr.startswith('$') and expr.endswith('$'):
+            return expr
+        if expr.startswith('\\[') and expr.endswith('\\]'):
+            return f"$${expr[2:-2]}$$"
+        if expr.startswith('\\(') and expr.endswith('\\)'):
+            return f"${expr[2:-2]}$"
+        return f"${expr}$"
+
+    def _get_math_metrics(self, latex: str, font_size: float) -> Tuple[float, float, float]:
+        """Get width, height, depth for math expression in points."""
+        key = (latex, font_size)
+        if key in self._math_metrics_cache:
+            return self._math_metrics_cache[key]
+
+        expr = self._format_math_expression(latex)
+        if not expr:
+            metrics = (0.0, 0.0, 0.0)
+        else:
+            buffer = io.BytesIO()
+            try:
+                width_px, height_px, depth_px = self._math_parser.to_png(
+                    buffer,
+                    expr,
+                    dpi=self._math_dpi,
+                    fontsize=font_size,
+                    color='black'
+                )
+            except Exception as error:
+                print(f"Warning: failed to measure math expression '{latex}': {error}")
+                width_px = height_px = depth_px = 0
+            finally:
+                buffer.close()
+
+            width_pt = width_px * 72.0 / self._math_dpi
+            height_pt = height_px * 72.0 / self._math_dpi
+            depth_pt = depth_px * 72.0 / self._math_dpi
+            metrics = (width_pt, height_pt, depth_pt)
+
+        self._math_metrics_cache[key] = metrics
+        return metrics
+
+    def _get_math_image(self, latex: str, font_size: float, color: Tuple[float, float, float]) -> Tuple[bytes, float, float, float]:
+        """Render math expression to image bytes with metrics."""
+        key = (latex, font_size, color)
+        if key in self._math_cache:
+            return self._math_cache[key]
+
+        expr = self._format_math_expression(latex)
+        if not expr:
+            data = (b"", 0.0, 0.0, 0.0)
+        else:
+            buffer = io.BytesIO()
+            hex_color = self._color_tuple_to_hex(color)
+            try:
+                width_px, height_px, depth_px = self._math_parser.to_png(
+                    buffer,
+                    expr,
+                    dpi=self._math_dpi,
+                    fontsize=font_size,
+                    color=hex_color
+                )
+            except Exception as error:
+                print(f"Warning: failed to render math expression '{latex}': {error}")
+                buffer.close()
+                self._math_cache[key] = (b"", 0.0, 0.0, 0.0)
+                return self._math_cache[key]
+
+            img_bytes = buffer.getvalue()
+            buffer.close()
+
+            width_pt = width_px * 72.0 / self._math_dpi
+            height_pt = height_px * 72.0 / self._math_dpi
+            depth_pt = depth_px * 72.0 / self._math_dpi
+            data = (img_bytes, width_pt, height_pt, depth_pt)
+
+            self._math_metrics_cache.setdefault((latex, font_size), (width_pt, height_pt, depth_pt))
+
+        self._math_cache[key] = data
+        return data
+
+    def _measure_math_width(self, latex: str, font_size: float) -> float:
+        """Measure inline math width in points."""
+        width, _, _ = self._get_math_metrics(latex, font_size)
+        return width
+
+    def _render_inline_math_span(self, span: RichText, x: float, y: float,
+                                  base_size: float, use_black: bool = False) -> float:
+        """Render inline math and return new x position."""
+        color_rgb = self._resolve_span_color(span, use_black)
+        img_bytes, width_pt, height_pt, depth_pt = self._get_math_image(span.text, base_size, color_rgb)
+
+        if not img_bytes or width_pt == 0:
+            return x
+
+        baseline_y = y - base_size
+        bottom_y = baseline_y - depth_pt
+
+        if span.highlight and span.highlight in HIGHLIGHT_COLORS:
+            highlight_color = HIGHLIGHT_COLORS[span.highlight]
+            padding = 1
+            self.c.saveState()
+            self.c.setFillColorRGB(highlight_color[0], highlight_color[1], highlight_color[2], alpha=0.35)
+            self.c.roundRect(
+                x - padding,
+                bottom_y - padding,
+                width_pt + padding * 2,
+                height_pt + padding * 2,
+                2,
+                fill=1,
+                stroke=0
+            )
+            self.c.restoreState()
+
+        image_reader = ImageReader(io.BytesIO(img_bytes))
+        self.c.drawImage(
+            image_reader,
+            x,
+            bottom_y,
+            width=width_pt,
+            height=height_pt,
+            mask='auto'
+        )
+
+        return x + width_pt
+
+    def _render_inline_sequence(self, spans: ListType[RichText], x: float, y: float,
+                                 base_size: float, use_black: bool = False) -> float:
+        """Render a sequence of spans (with inline math support)."""
+        for segment in self._expand_inline_spans(spans):
+            x = self._render_rich_text_span(segment, x, y, base_size, use_black)
+        return x
     
     def _render_caption(self, caption: Caption):
         """Render a caption block (small italic text)."""
@@ -341,133 +554,107 @@ class PDFRenderer:
         Args:
             span: RichText span to render
             x: Current x position
-            y: Current y position (baseline)
+            y: Current y position (baseline reference)
             base_size: Base font size
             use_black: Force black color (for headings)
-            
+        
         Returns:
             New x position after rendering
         """
-        # Determine font
-        if span.code:
-            font_name = self.custom_fonts.code
-        elif span.bold and span.italic:
-            font_name = self.custom_fonts.bold_italic
-        elif span.bold:
-            font_name = self.custom_fonts.bold
-        elif span.italic:
-            font_name = self.custom_fonts.italic
-        else:
-            font_name = self.custom_fonts.body
-        
+        if not span.text:
+            return x
+
+        if getattr(span, "math", False):
+            return self._render_inline_math_span(span, x, y, base_size, use_black)
+
+        font_name = self._get_font_name(span)
         self.c.setFont(font_name, base_size)
-        
-        # Calculate text width first
         text_width = self.c.stringWidth(span.text, font_name, base_size)
-        
-        # Highlight background (draw BEFORE text with opacity)
+
+        if text_width == 0:
+            return x
+
         if span.highlight and span.highlight in HIGHLIGHT_COLORS:
             highlight_color = HIGHLIGHT_COLORS[span.highlight]
-            
-            # Save state
-            self.c.saveState()
-            
-            # Set opacity (alpha) to 0.35
-            self.c.setFillColorRGB(highlight_color[0], highlight_color[1], highlight_color[2], alpha=0.35)
-            
-            # Draw rounded rectangle highlight slightly larger than text
             padding = 1
+            self.c.saveState()
+            self.c.setFillColorRGB(highlight_color[0], highlight_color[1], highlight_color[2], alpha=0.35)
             self.c.roundRect(
-                x - padding, 
-                y - base_size - padding, 
-                text_width + padding * 2, 
+                x - padding,
+                y - base_size - padding,
+                text_width + padding * 2,
                 base_size + padding * 2,
-                2,  # corner radius
-                fill=1, 
+                2,
+                fill=1,
                 stroke=0
             )
-            
-            # Restore state
             self.c.restoreState()
-        
-        # Text color
-        if use_black:
-            self.c.setFillColorRGB(0, 0, 0)  # Black for headings
-        elif span.color and span.color in TEXT_COLORS:
-            self.c.setFillColorRGB(*TEXT_COLORS[span.color])
-        else:
-            self.c.setFillColorRGB(*colors.text_primary)
-        
-        # Draw text
+
+        color_rgb = self._resolve_span_color(span, use_black)
+        self.c.setFillColorRGB(*color_rgb)
         self.c.drawString(x, y - base_size, span.text)
-        
+
         return x + text_width
     
-    def _wrap_rich_text(self, spans: ListType[RichText], max_width: float, 
+    def _wrap_rich_text(self, spans: ListType[RichText], max_width: float,
                         font_size: float) -> ListType[ListType[RichText]]:
-        """
-        Wrap rich text spans across multiple lines.
-        
-        Args:
-            spans: List of rich text spans
-            max_width: Maximum line width
-            font_size: Font size for width calculation
-            
-        Returns:
-            List of lines, where each line is a list of spans
-        """
-        lines = []
-        current_line = []
-        current_width = 0
-        
-        for span in spans:
-            # Determine font for width calculation
-            if span.code:
-                font_name = self.custom_fonts.code
-            elif span.bold and span.italic:
-                font_name = self.custom_fonts.bold_italic
-            elif span.bold:
-                font_name = self.custom_fonts.bold
-            elif span.italic:
-                font_name = self.custom_fonts.italic
+        """Wrap rich text spans across multiple lines (with inline math)."""
+        lines: ListType[ListType[RichText]] = []
+        current_line: ListType[RichText] = []
+        current_width = 0.0
+
+        for span in self._expand_inline_spans(spans):
+            if span.text == "":
+                continue
+
+            if getattr(span, "math", False):
+                tokens = [span]
             else:
-                font_name = self.custom_fonts.body
-            
-            # Split span text by words
-            words = span.text.split(' ')
-            
-            for i, word in enumerate(words):
-                # Add space before word (except first word)
-                word_text = word if i == 0 and len(current_line) == 0 else ' ' + word
-                word_width = self.c.stringWidth(word_text, font_name, font_size)
-                
-                # Check if word fits on current line
-                if current_width + word_width > max_width and current_line:
-                    # Start new line
+                parts = re.split(r'(\s+)', span.text)
+                tokens = [span.model_copy(update={"text": part}) for part in parts if part]
+
+            for token in tokens:
+                token_text = token.text
+                if token_text == "":
+                    continue
+
+                is_math = getattr(token, "math", False)
+                is_space = token_text.isspace()
+
+                if is_math:
+                    token_width = self._measure_math_width(token.text, font_size)
+                else:
+                    font_name = self._get_font_name(token)
+                    token_width = self.c.stringWidth(token_text, font_name, font_size)
+
+                if token_width == 0:
+                    continue
+
+                if current_width + token_width > max_width and current_line and not (is_space and len(current_line) == 0):
                     lines.append(current_line)
                     current_line = []
-                    current_width = 0
-                    word_text = word  # Remove leading space for new line
-                    word_width = self.c.stringWidth(word_text, font_name, font_size)
-                
-                # Add word to current line
-                # Create new span with single word
-                word_span = RichText(
-                    text=word_text,
-                    bold=span.bold,
-                    italic=span.italic,
-                    code=span.code,
-                    highlight=span.highlight,
-                    color=span.color,
-                    emoji=span.emoji
-                )
-                current_line.append(word_span)
-                current_width += word_width
-        
-        # Add last line
+                    current_width = 0.0
+
+                    if is_space:
+                        continue
+
+                    if not is_math and token_text.startswith(' '):
+                        trimmed = token_text.lstrip()
+                        if not trimmed:
+                            continue
+                        token = token.model_copy(update={"text": trimmed})
+                        font_name = self._get_font_name(token)
+                        token_width = self.c.stringWidth(token.text, font_name, font_size)
+
+                if is_space and not current_line:
+                    continue
+
+                current_line.append(token)
+                current_width += token_width
+
         if current_line:
             lines.append(current_line)
-        
+
         return lines if lines else [[RichText(text="")]]
     
     def _render_list(self, list_block: ListBlock):
@@ -531,9 +718,7 @@ class PDFRenderer:
         
         # Render item text
         if item.text:
-            x_offset = indent + spacing.list_indent
-            for span in item.text:
-                x_offset = self._render_rich_text_span(span, x_offset, self.y, font_sizes.body)
+            self._render_inline_sequence(item.text, indent + spacing.list_indent, self.y, font_sizes.body)
         
         self.y -= font_sizes.body + spacing.list_item_gap
         
@@ -594,213 +779,43 @@ class PDFRenderer:
         self.y -= block_height + spacing.section_gap
     
     def _render_formula(self, formula: Formula):
-        """Render a math formula with improved LaTeX to Unicode conversion."""
-        self._check_page_break(font_sizes.body * 3)
-        
-        self.y -= spacing.section_gap
-        
-        # Clean LaTeX input
+        """Render a math formula using matplotlib's mathtext engine."""
         latex = formula.latex.strip()
-        
-        # Replace double backslashes with single (common mistake)
-        latex = latex.replace('\\\\', '\\')
-        
-        # Math functions (before symbols to avoid conflicts)
-        latex = latex.replace('\\sin', 'sin')
-        latex = latex.replace('\\cos', 'cos')
-        latex = latex.replace('\\tan', 'tan')
-        latex = latex.replace('\\ln', 'ln')
-        latex = latex.replace('\\log', 'log')
-        latex = latex.replace('\\exp', 'exp')
-        latex = latex.replace('\\lim', 'lim')
-        latex = latex.replace('\\max', 'max')
-        latex = latex.replace('\\min', 'min')
-        
-        # Vectors and special notations
-        latex = latex.replace('\\vec', '')
-        latex = latex.replace('\\bar', '')
-        latex = latex.replace('\\hat', '')
-        latex = latex.replace('\\dot', '̇')  # combining dot above
-        latex = latex.replace('\\ddot', '̈')  # combining diaeresis
-        latex = latex.replace('\\tilde', '~')
-        
-        # Integral and sum operators
-        latex = latex.replace('\\int', '∫')
-        latex = latex.replace('\\sum', '∑')
-        latex = latex.replace('\\prod', '∏')
-        latex = latex.replace('\\infty', '∞')
-        latex = latex.replace('\\partial', '∂')
-        latex = latex.replace('\\nabla', '∇')
-        latex = latex.replace('\\cdot', '·')
-        latex = latex.replace('\\circ', '∘')
-        
-        # Greek letters (lowercase)
-        latex = latex.replace('\\alpha', 'α')
-        latex = latex.replace('\\beta', 'β')
-        latex = latex.replace('\\gamma', 'γ')
-        latex = latex.replace('\\delta', 'δ')
-        latex = latex.replace('\\epsilon', 'ε')
-        latex = latex.replace('\\theta', 'θ')
-        latex = latex.replace('\\lambda', 'λ')
-        latex = latex.replace('\\mu', 'μ')
-        latex = latex.replace('\\pi', 'π')
-        latex = latex.replace('\\rho', 'ρ')
-        latex = latex.replace('\\sigma', 'σ')
-        latex = latex.replace('\\tau', 'τ')
-        latex = latex.replace('\\phi', 'φ')
-        latex = latex.replace('\\omega', 'ω')
-        
-        # Greek letters (uppercase)
-        latex = latex.replace('\\Gamma', 'Γ')
-        latex = latex.replace('\\Delta', 'Δ')
-        latex = latex.replace('\\Theta', 'Θ')
-        latex = latex.replace('\\Lambda', 'Λ')
-        latex = latex.replace('\\Sigma', 'Σ')
-        latex = latex.replace('\\Phi', 'Φ')
-        latex = latex.replace('\\Omega', 'Ω')
-        
-        # Comparison operators
-        latex = latex.replace('\\leq', '≤')
-        latex = latex.replace('\\geq', '≥')
-        latex = latex.replace('\\neq', '≠')
-        latex = latex.replace('\\approx', '≈')
-        latex = latex.replace('\\equiv', '≡')
-        latex = latex.replace('\\sim', '∼')
-        latex = latex.replace('\\propto', '∝')
-        
-        # Arithmetic operators
-        latex = latex.replace('\\times', '×')
-        latex = latex.replace('\\div', '÷')
-        latex = latex.replace('\\pm', '±')
-        latex = latex.replace('\\mp', '∓')
-        
-        # Set theory
-        latex = latex.replace('\\in', '∈')
-        latex = latex.replace('\\notin', '∉')
-        latex = latex.replace('\\subset', '⊂')
-        latex = latex.replace('\\supset', '⊃')
-        latex = latex.replace('\\cup', '∪')
-        latex = latex.replace('\\cap', '∩')
-        latex = latex.replace('\\emptyset', '∅')
-        
-        # Logic
-        latex = latex.replace('\\forall', '∀')
-        latex = latex.replace('\\exists', '∃')
-        latex = latex.replace('\\neg', '¬')
-        latex = latex.replace('\\land', '∧')
-        latex = latex.replace('\\lor', '∨')
-        
-        # Arrows
-        latex = latex.replace('\\rightarrow', '→')
-        latex = latex.replace('\\leftarrow', '←')
-        latex = latex.replace('\\Rightarrow', '⇒')
-        latex = latex.replace('\\Leftarrow', '⇐')
-        latex = latex.replace('\\leftrightarrow', '↔')
-        
-        # Fractions and roots - handle more carefully
-        while '\\frac{' in latex:
-            start = latex.find('\\frac{')
-            if start == -1:
-                break
-            # Find matching closing braces
-            brace_count = 0
-            num_start = start + 6
-            i = num_start
-            while i < len(latex):
-                if latex[i] == '{':
-                    brace_count += 1
-                elif latex[i] == '}':
-                    if brace_count == 0:
-                        break
-                    brace_count -= 1
-                i += 1
-            num_end = i
-            
-            # Find denominator
-            if i + 1 < len(latex) and latex[i + 1] == '{':
-                brace_count = 0
-                denom_start = i + 2
-                j = denom_start
-                while j < len(latex):
-                    if latex[j] == '{':
-                        brace_count += 1
-                    elif latex[j] == '}':
-                        if brace_count == 0:
-                            break
-                        brace_count -= 1
-                    j += 1
-                denom_end = j
-                
-                numerator = latex[num_start:num_end]
-                denominator = latex[denom_start:denom_end]
-                latex = latex[:start] + f'({numerator})/({denominator})' + latex[j + 1:]
-            else:
-                break
-        
-        # Square roots
-        latex = latex.replace('\\sqrt{', '√(')
-        latex = latex.replace('\\sqrt', '√')
-        
-        # Clean up remaining braces (be careful with parentheses we added)
-        latex = latex.replace('{', '(').replace('}', ')')
-        
-        # Handle subscripts and superscripts with proper Unicode
-        # Convert _x to ₓ and ^x to ˣ where possible
-        readable = ''
-        i = 0
-        while i < len(latex):
-            if latex[i] == '_' and i + 1 < len(latex):
-                # Subscript
-                next_char = latex[i + 1]
-                if next_char == '(':
-                    # Multi-character subscript
-                    end = latex.find(')', i + 2)
-                    if end != -1:
-                        readable += '₍' + latex[i + 2:end] + '₎'
-                        i = end + 1
-                        continue
-                else:
-                    # Single character subscript
-                    sub_map = {'0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', 
-                              '6': '₆', '7': '₇', '8': '₈', '9': '₉', 'n': 'ₙ', 'i': 'ᵢ', 
-                              'x': 'ₓ', 'a': 'ₐ', 'e': 'ₑ', 'o': 'ₒ'}
-                    readable += sub_map.get(next_char, '₍' + next_char + '₎')
-                    i += 2
-                    continue
-            elif latex[i] == '^' and i + 1 < len(latex):
-                # Superscript
-                next_char = latex[i + 1]
-                if next_char == '(':
-                    # Multi-character superscript
-                    end = latex.find(')', i + 2)
-                    if end != -1:
-                        readable += '⁽' + latex[i + 2:end] + '⁾'
-                        i = end + 1
-                        continue
-                else:
-                    # Single character superscript
-                    sup_map = {'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵',
-                              '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', 'n': 'ⁿ', 'i': 'ⁱ',
-                              '+': '⁺', '-': '⁻', '=': '⁼', 'x': 'ˣ', 'y': 'ʸ'}
-                    readable += sup_map.get(next_char, '⁽' + next_char + '⁾')
-                    i += 2
-                    continue
-            
-            readable += latex[i]
-            i += 1
-        
-        # Use larger monospace font for formulas
-        formula_size = font_sizes.body + 4
-        self.c.setFont(self.custom_fonts.code, formula_size)
-        self.c.setFillColorRGB(*colors.text_primary)
-        
-        # Center the formula
-        text_width = self.c.stringWidth(readable, self.custom_fonts.code, formula_size)
-        x_centered = self.x + (self.content_width - text_width) / 2
-        
-        self.c.drawString(x_centered, self.y - formula_size, readable)
-        
-        self.y -= formula_size + spacing.section_gap
+        if not latex:
+            return
+
+        font_size = font_sizes.body * 1.1
+        _, height_pt, _ = self._get_math_metrics(latex, font_size)
+        required_height = height_pt + spacing.section_gap * 2
+        self._check_page_break(required_height)
+
+        self.y -= spacing.section_gap
+
+        color_rgb = colors.text_primary
+        img_bytes, width_pt, height_pt, _ = self._get_math_image(latex, font_size, color_rgb)
+
+        if not img_bytes or width_pt == 0:
+            # Fallback: render plain text
+            self.c.setFont(self.custom_fonts.body, font_sizes.body)
+            self.c.setFillColorRGB(*color_rgb)
+            self.c.drawString(self.x, self.y - font_sizes.body, latex)
+            self.y -= font_sizes.body + spacing.section_gap
+            return
+
+        x_centered = self.x + (self.content_width - width_pt) / 2
+        y_bottom = self.y - height_pt
+
+        image_reader = ImageReader(io.BytesIO(img_bytes))
+        self.c.drawImage(
+            image_reader,
+            x_centered,
+            y_bottom,
+            width=width_pt,
+            height=height_pt,
+            mask='auto'
+        )
+
+        self.y = y_bottom - spacing.section_gap
     
     def _render_table(self, table: Table):
         """Render a table with improved styling."""
@@ -852,41 +867,7 @@ class PDFRenderer:
                 if cell:
                     x_offset = current_x + spacing.table_cell_padding
                     text_y = current_y - row_height / 2 - font_sizes.body / 2 + 2
-                    
-                    # Render rich text spans
-                    for span in cell:
-                        # Set font based on formatting
-                        if span.bold:
-                            self.c.setFont(self.custom_fonts.bold, font_sizes.body)
-                        else:
-                            self.c.setFont(self.custom_fonts.body, font_sizes.body)
-                        
-                        # Set color
-                        if span.color and span.color in TEXT_COLORS:
-                            self.c.setFillColorRGB(*TEXT_COLORS[span.color])
-                        else:
-                            self.c.setFillColorRGB(*colors.text_primary)
-                        
-                        # Highlight
-                        if span.highlight and span.highlight in HIGHLIGHT_COLORS:
-                            highlight_color = HIGHLIGHT_COLORS[span.highlight]
-                            text_width = self.c.stringWidth(span.text, self.custom_fonts.body, font_sizes.body)
-                            
-                            self.c.saveState()
-                            self.c.setFillColorRGB(highlight_color[0], highlight_color[1], highlight_color[2], alpha=0.35)
-                            self.c.roundRect(x_offset - 1, text_y - 2, text_width + 2, font_sizes.body + 2,
-                                           2, fill=1, stroke=0)
-                            self.c.restoreState()
-                            
-                            # Reset color after highlight
-                            if span.color and span.color in TEXT_COLORS:
-                                self.c.setFillColorRGB(*TEXT_COLORS[span.color])
-                            else:
-                                self.c.setFillColorRGB(*colors.text_primary)
-                        
-                        # Draw text
-                        self.c.drawString(x_offset, text_y, span.text)
-                        x_offset += self.c.stringWidth(span.text, self.custom_fonts.body, font_sizes.body)
+                    self._render_inline_sequence(cell, x_offset, text_y + font_sizes.body, font_sizes.body)
                 
                 current_x += col_widths[col_idx]
             

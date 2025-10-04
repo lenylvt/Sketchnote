@@ -29,6 +29,7 @@ class RichText(BaseModel):
         default=None, description="Text color"
     )
     emoji: bool = Field(default=False, description="Hint for emoji rendering")
+    math: bool = Field(default=False, description="Treat the span as LaTeX math (inline)")
 
 
 class Meta(BaseModel):
