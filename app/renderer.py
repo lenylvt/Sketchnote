@@ -33,7 +33,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 from app.models import (
     Document, Block, Heading, Paragraph, Caption, ListBlock,
-    Break, PageBreak, Code, Formula, Table, Image, ExerciseArea,
+    Break, PageBreak, Code, Formula, Table, Image, ExerciseArea, Card,
     RichText, ListItem, Meta
 )
 from app.styles import (
@@ -251,6 +251,8 @@ class PDFRenderer:
             self._render_image(block)
         elif isinstance(block, ExerciseArea):
             self._render_exercise_area(block)
+        elif isinstance(block, Card):
+            self._render_card(block)
     
     def _check_page_break(self, required_height: float):
         """Check if we need a page break and create one if necessary."""
@@ -992,6 +994,92 @@ class PDFRenderer:
         # blank: no pattern needed
         
         self.y -= height + spacing.section_gap
+    
+    def _render_card(self, card: Card):
+        """
+        Render a card container that keeps content together on one page.
+        
+        The card measures its content first, then checks if it fits on the current page.
+        If not, it moves to a new page entirely. Optionally draws a background and border.
+        """
+        padding_pts = page_config.mm_to_points(card.padding_mm)
+        
+        # Save current position
+        start_y = self.y
+        start_x = self.x
+        
+        # Create a temporary renderer to measure the card content height
+        temp_y = self.y - padding_pts
+        original_y = self.y
+        
+        # Temporarily adjust margins to account for card padding
+        self.x += padding_pts
+        self.content_width -= 2 * padding_pts
+        self.y -= padding_pts
+        
+        # Render content in "measurement mode" by saving positions
+        content_start_y = self.y
+        
+        for block in card.content:
+            self._render_block(block)
+        
+        content_end_y = self.y
+        content_height = content_start_y - content_end_y
+        
+        # Restore margins
+        self.x -= padding_pts
+        self.content_width += 2 * padding_pts
+        
+        # Total card height including padding
+        total_card_height = content_height + 2 * padding_pts
+        
+        # Check if we need to move to a new page
+        if start_y - total_card_height < self.margin_bottom:
+            # Card doesn't fit on current page, move to new page
+            self.c.showPage()
+            self.y = self.page_height - self.margin_top
+            start_y = self.y
+        else:
+            # Card fits, restore to start position and render properly
+            self.y = start_y
+        
+        # Draw card background if requested
+        card_top = self.y
+        card_bottom = self.y - total_card_height
+        
+        if card.background and card.background != "none":
+            if card.background == "light":
+                # Very light gray
+                self.c.setFillColorRGB(0.97, 0.97, 0.97)
+            elif card.background == "subtle":
+                # Light beige
+                self.c.setFillColorRGB(0.98, 0.97, 0.95)
+            
+            self.c.roundRect(start_x, card_bottom, self.content_width, total_card_height,
+                           4, stroke=0, fill=1)
+            
+            # Reset fill color
+            self.c.setFillColorRGB(*colors.text_primary)
+        
+        # Draw border if requested
+        if card.border:
+            self.c.setStrokeColorRGB(*colors.line_light)
+            self.c.setLineWidth(0.5)
+            self.c.roundRect(start_x, card_bottom, self.content_width, total_card_height,
+                           4, stroke=1, fill=0)
+        
+        # Now render the actual content
+        self.y = card_top - padding_pts
+        self.x = start_x + padding_pts
+        self.content_width -= 2 * padding_pts
+        
+        for block in card.content:
+            self._render_block(block)
+        
+        # Restore position and margins
+        self.x = start_x
+        self.content_width += 2 * padding_pts
+        self.y -= padding_pts  # Add bottom padding
 
 
 def render_document(document: Document) -> bytes:

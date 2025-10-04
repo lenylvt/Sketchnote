@@ -175,6 +175,14 @@ class AutoRepair:
                 elif "latex" in block:
                     block["type"] = "formula"
                     repairs.append(f"Inferred block #{i} type as 'formula'")
+                elif "content" in block and isinstance(block["content"], list):
+                    # Check if content is array of blocks (card) or string (code)
+                    if block["content"] and isinstance(block["content"], list) and isinstance(block["content"][0], dict):
+                        block["type"] = "card"
+                        repairs.append(f"Inferred block #{i} type as 'card'")
+                    else:
+                        block["type"] = "code"
+                        repairs.append(f"Inferred block #{i} type as 'code'")
                 elif "content" in block:
                     block["type"] = "code"
                     repairs.append(f"Inferred block #{i} type as 'code'")

@@ -251,6 +251,7 @@ components:
         - $ref: '#/components/schemas/Table'
         - $ref: '#/components/schemas/Image'
         - $ref: '#/components/schemas/ExerciseArea'
+        - $ref: '#/components/schemas/Card'
       discriminator:
         propertyName: type
         mapping:
@@ -265,6 +266,7 @@ components:
           table: '#/components/schemas/Table'
           image: '#/components/schemas/Image'
           exercise: '#/components/schemas/ExerciseArea'
+          card: '#/components/schemas/Card'
 
     Heading:
       type: object
@@ -514,6 +516,44 @@ components:
           minimum: 10
           maximum: 200
           description: Height of the exercise area in millimeters
+
+    Card:
+      type: object
+      required:
+        - type
+        - content
+      properties:
+        type:
+          type: string
+          enum: [card]
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Block'
+          description: |
+            Blocks contained in the card (kept together on one page).
+            The card ensures all its content stays together - if it doesn't fit
+            on the current page, it moves entirely to the next page.
+            Useful for keeping related elements together (e.g., heading + formula).
+        background:
+          type: string
+          enum: [none, light, subtle]
+          default: none
+          description: |
+            Optional background style:
+            - none: transparent (no background)
+            - light: very light gray (#F7F7F7)
+            - subtle: light beige (#FAF9F3)
+        padding_mm:
+          type: number
+          minimum: 0
+          maximum: 20
+          default: 8
+          description: Internal padding in millimeters (space between border and content)
+        border:
+          type: boolean
+          default: false
+          description: Draw a subtle rounded border around the card
 
     RichText:
       type: object

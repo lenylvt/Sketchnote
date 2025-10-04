@@ -139,6 +139,24 @@ class ExerciseArea(BaseModel):
     height_mm: float = Field(..., ge=10, le=200, description="Height in millimeters")
 
 
+class Card(BaseModel):
+    """
+    Card container that keeps content together on the same page.
+    
+    Prevents content from being split across pages. Useful for keeping
+    related elements together (e.g., heading + paragraph, formula + explanation).
+    If the card doesn't fit on the current page, it moves to the next page entirely.
+    """
+    type: Literal["card"] = "card"
+    content: ListType['Block'] = Field(..., description="Blocks contained in the card (kept together)")
+    background: Optional[Literal["none", "light", "subtle"]] = Field(
+        default="none", 
+        description="Optional background style: none (transparent), light (very light gray), subtle (light beige)"
+    )
+    padding_mm: float = Field(default=8.0, ge=0, le=20, description="Internal padding in millimeters")
+    border: bool = Field(default=False, description="Draw a subtle border around the card")
+
+
 # Union type for all block types
 Block = Union[
     Heading,
@@ -152,6 +170,7 @@ Block = Union[
     Table,
     Image,
     ExerciseArea,
+    Card,
 ]
 
 
@@ -191,3 +210,4 @@ class Document(BaseModel):
 
 # Update forward references
 ListItem.model_rebuild()
+Card.model_rebuild()
