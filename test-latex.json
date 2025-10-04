@@ -1,0 +1,119 @@
+{
+  "meta": {
+    "title": "Test LaTeX Formulas",
+    "font_family": "Roboto"
+  },
+  "blocks": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": [{"text": "Test des Formules LaTeX", "bold": true}]
+    },
+    {
+      "type": "paragraph",
+      "text": [{"text": "Voici différentes formules mathématiques pour tester le rendu LaTeX:"}]
+    },
+    {
+      "type": "break",
+      "strength": "extra_light"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [{"text": "Intégrales", "bold": true}]
+    },
+    {
+      "type": "formula",
+      "latex": "\\int_0^1 x^2 dx = \\frac{1}{3}"
+    },
+    {
+      "type": "formula",
+      "latex": "\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}"
+    },
+    {
+      "type": "break",
+      "strength": "extra_light"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [{"text": "Fonctions Trigonométriques", "bold": true}]
+    },
+    {
+      "type": "formula",
+      "latex": "f(x) = \\sin(x) + \\cos(x)"
+    },
+    {
+      "type": "formula",
+      "latex": "\\sin^2(x) + \\cos^2(x) = 1"
+    },
+    {
+      "type": "break",
+      "strength": "extra_light"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [{"text": "Électromagnétisme", "bold": true}]
+    },
+    {
+      "type": "formula",
+      "latex": "\\nabla \\cdot \\vec{E} = \\frac{\\rho}{\\epsilon_0}"
+    },
+    {
+      "type": "formula",
+      "latex": "\\nabla \\times \\vec{B} = \\mu_0 \\vec{J}"
+    },
+    {
+      "type": "break",
+      "strength": "extra_light"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [{"text": "Lettres Grecques", "bold": true}]
+    },
+    {
+      "type": "formula",
+      "latex": "\\alpha + \\beta + \\gamma = \\pi"
+    },
+    {
+      "type": "formula",
+      "latex": "\\Delta E = h\\nu"
+    },
+    {
+      "type": "break",
+      "strength": "extra_light"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [{"text": "Comparaisons", "bold": true}]
+    },
+    {
+      "type": "formula",
+      "latex": "x \\leq y \\leq z"
+    },
+    {
+      "type": "formula",
+      "latex": "a \\approx b \\neq c"
+    },
+    {
+      "type": "break",
+      "strength": "extra_light"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [{"text": "Sommes et Produits", "bold": true}]
+    },
+    {
+      "type": "formula",
+      "latex": "\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}"
+    },
+    {
+      "type": "formula",
+      "latex": "\\prod_{i=1}^{n} i = n!"
+    }
+  ]
+}

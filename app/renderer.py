@@ -594,57 +594,202 @@ class PDFRenderer:
         self.y -= block_height + spacing.section_gap
     
     def _render_formula(self, formula: Formula):
-        """Render a math formula in human-readable format with improved Unicode conversion."""
+        """Render a math formula with improved LaTeX to Unicode conversion."""
         self._check_page_break(font_sizes.body * 3)
         
         self.y -= spacing.section_gap
         
-        # Improved LaTeX to Unicode conversion
-        readable = formula.latex
+        # Clean LaTeX input
+        latex = formula.latex.strip()
         
-        # Operators and symbols
-        readable = readable.replace('\\int', '∫')
-        readable = readable.replace('\\sum', '∑')
-        readable = readable.replace('\\prod', '∏')
-        readable = readable.replace('\\infty', '∞')
-        readable = readable.replace('\\partial', '∂')
-        readable = readable.replace('\\nabla', '∇')
+        # Replace double backslashes with single (common mistake)
+        latex = latex.replace('\\\\', '\\')
         
-        # Greek letters
-        readable = readable.replace('\\pi', 'π')
-        readable = readable.replace('\\alpha', 'α')
-        readable = readable.replace('\\beta', 'β')
-        readable = readable.replace('\\gamma', 'γ')
-        readable = readable.replace('\\delta', 'δ')
-        readable = readable.replace('\\theta', 'θ')
-        readable = readable.replace('\\lambda', 'λ')
-        readable = readable.replace('\\mu', 'μ')
-        readable = readable.replace('\\sigma', 'σ')
-        readable = readable.replace('\\omega', 'ω')
+        # Math functions (before symbols to avoid conflicts)
+        latex = latex.replace('\\sin', 'sin')
+        latex = latex.replace('\\cos', 'cos')
+        latex = latex.replace('\\tan', 'tan')
+        latex = latex.replace('\\ln', 'ln')
+        latex = latex.replace('\\log', 'log')
+        latex = latex.replace('\\exp', 'exp')
+        latex = latex.replace('\\lim', 'lim')
+        latex = latex.replace('\\max', 'max')
+        latex = latex.replace('\\min', 'min')
         
-        # Math operators
-        readable = readable.replace('\\leq', '≤')
-        readable = readable.replace('\\geq', '≥')
-        readable = readable.replace('\\neq', '≠')
-        readable = readable.replace('\\approx', '≈')
-        readable = readable.replace('\\equiv', '≡')
-        readable = readable.replace('\\times', '×')
-        readable = readable.replace('\\div', '÷')
-        readable = readable.replace('\\pm', '±')
+        # Vectors and special notations
+        latex = latex.replace('\\vec', '')
+        latex = latex.replace('\\bar', '')
+        latex = latex.replace('\\hat', '')
+        latex = latex.replace('\\dot', '̇')  # combining dot above
+        latex = latex.replace('\\ddot', '̈')  # combining diaeresis
+        latex = latex.replace('\\tilde', '~')
         
-        # Functions with better formatting
-        readable = readable.replace('\\frac{', '(')
-        readable = readable.replace('}{', ')⁄(')
-        readable = readable.replace('\\sqrt{', '√(')
-        readable = readable.replace('\\sqrt', '√')
+        # Integral and sum operators
+        latex = latex.replace('\\int', '∫')
+        latex = latex.replace('\\sum', '∑')
+        latex = latex.replace('\\prod', '∏')
+        latex = latex.replace('\\infty', '∞')
+        latex = latex.replace('\\partial', '∂')
+        latex = latex.replace('\\nabla', '∇')
+        latex = latex.replace('\\cdot', '·')
+        latex = latex.replace('\\circ', '∘')
         
-        # Clean up braces
-        readable = readable.replace('{', '').replace('}', ')')
+        # Greek letters (lowercase)
+        latex = latex.replace('\\alpha', 'α')
+        latex = latex.replace('\\beta', 'β')
+        latex = latex.replace('\\gamma', 'γ')
+        latex = latex.replace('\\delta', 'δ')
+        latex = latex.replace('\\epsilon', 'ε')
+        latex = latex.replace('\\theta', 'θ')
+        latex = latex.replace('\\lambda', 'λ')
+        latex = latex.replace('\\mu', 'μ')
+        latex = latex.replace('\\pi', 'π')
+        latex = latex.replace('\\rho', 'ρ')
+        latex = latex.replace('\\sigma', 'σ')
+        latex = latex.replace('\\tau', 'τ')
+        latex = latex.replace('\\phi', 'φ')
+        latex = latex.replace('\\omega', 'ω')
         
-        # Subscripts and superscripts (keep simple)
-        readable = readable.replace('_', '₍').replace('^', '⁽')
+        # Greek letters (uppercase)
+        latex = latex.replace('\\Gamma', 'Γ')
+        latex = latex.replace('\\Delta', 'Δ')
+        latex = latex.replace('\\Theta', 'Θ')
+        latex = latex.replace('\\Lambda', 'Λ')
+        latex = latex.replace('\\Sigma', 'Σ')
+        latex = latex.replace('\\Phi', 'Φ')
+        latex = latex.replace('\\Omega', 'Ω')
         
-        # Use larger monospace font for formulas (better readability)
+        # Comparison operators
+        latex = latex.replace('\\leq', '≤')
+        latex = latex.replace('\\geq', '≥')
+        latex = latex.replace('\\neq', '≠')
+        latex = latex.replace('\\approx', '≈')
+        latex = latex.replace('\\equiv', '≡')
+        latex = latex.replace('\\sim', '∼')
+        latex = latex.replace('\\propto', '∝')
+        
+        # Arithmetic operators
+        latex = latex.replace('\\times', '×')
+        latex = latex.replace('\\div', '÷')
+        latex = latex.replace('\\pm', '±')
+        latex = latex.replace('\\mp', '∓')
+        
+        # Set theory
+        latex = latex.replace('\\in', '∈')
+        latex = latex.replace('\\notin', '∉')
+        latex = latex.replace('\\subset', '⊂')
+        latex = latex.replace('\\supset', '⊃')
+        latex = latex.replace('\\cup', '∪')
+        latex = latex.replace('\\cap', '∩')
+        latex = latex.replace('\\emptyset', '∅')
+        
+        # Logic
+        latex = latex.replace('\\forall', '∀')
+        latex = latex.replace('\\exists', '∃')
+        latex = latex.replace('\\neg', '¬')
+        latex = latex.replace('\\land', '∧')
+        latex = latex.replace('\\lor', '∨')
+        
+        # Arrows
+        latex = latex.replace('\\rightarrow', '→')
+        latex = latex.replace('\\leftarrow', '←')
+        latex = latex.replace('\\Rightarrow', '⇒')
+        latex = latex.replace('\\Leftarrow', '⇐')
+        latex = latex.replace('\\leftrightarrow', '↔')
+        
+        # Fractions and roots - handle more carefully
+        while '\\frac{' in latex:
+            start = latex.find('\\frac{')
+            if start == -1:
+                break
+            # Find matching closing braces
+            brace_count = 0
+            num_start = start + 6
+            i = num_start
+            while i < len(latex):
+                if latex[i] == '{':
+                    brace_count += 1
+                elif latex[i] == '}':
+                    if brace_count == 0:
+                        break
+                    brace_count -= 1
+                i += 1
+            num_end = i
+            
+            # Find denominator
+            if i + 1 < len(latex) and latex[i + 1] == '{':
+                brace_count = 0
+                denom_start = i + 2
+                j = denom_start
+                while j < len(latex):
+                    if latex[j] == '{':
+                        brace_count += 1
+                    elif latex[j] == '}':
+                        if brace_count == 0:
+                            break
+                        brace_count -= 1
+                    j += 1
+                denom_end = j
+                
+                numerator = latex[num_start:num_end]
+                denominator = latex[denom_start:denom_end]
+                latex = latex[:start] + f'({numerator})/({denominator})' + latex[j + 1:]
+            else:
+                break
+        
+        # Square roots
+        latex = latex.replace('\\sqrt{', '√(')
+        latex = latex.replace('\\sqrt', '√')
+        
+        # Clean up remaining braces (be careful with parentheses we added)
+        latex = latex.replace('{', '(').replace('}', ')')
+        
+        # Handle subscripts and superscripts with proper Unicode
+        # Convert _x to ₓ and ^x to ˣ where possible
+        readable = ''
+        i = 0
+        while i < len(latex):
+            if latex[i] == '_' and i + 1 < len(latex):
+                # Subscript
+                next_char = latex[i + 1]
+                if next_char == '(':
+                    # Multi-character subscript
+                    end = latex.find(')', i + 2)
+                    if end != -1:
+                        readable += '₍' + latex[i + 2:end] + '₎'
+                        i = end + 1
+                        continue
+                else:
+                    # Single character subscript
+                    sub_map = {'0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', 
+                              '6': '₆', '7': '₇', '8': '₈', '9': '₉', 'n': 'ₙ', 'i': 'ᵢ', 
+                              'x': 'ₓ', 'a': 'ₐ', 'e': 'ₑ', 'o': 'ₒ'}
+                    readable += sub_map.get(next_char, '₍' + next_char + '₎')
+                    i += 2
+                    continue
+            elif latex[i] == '^' and i + 1 < len(latex):
+                # Superscript
+                next_char = latex[i + 1]
+                if next_char == '(':
+                    # Multi-character superscript
+                    end = latex.find(')', i + 2)
+                    if end != -1:
+                        readable += '⁽' + latex[i + 2:end] + '⁾'
+                        i = end + 1
+                        continue
+                else:
+                    # Single character superscript
+                    sup_map = {'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵',
+                              '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', 'n': 'ⁿ', 'i': 'ⁱ',
+                              '+': '⁺', '-': '⁻', '=': '⁼', 'x': 'ˣ', 'y': 'ʸ'}
+                    readable += sup_map.get(next_char, '⁽' + next_char + '⁾')
+                    i += 2
+                    continue
+            
+            readable += latex[i]
+            i += 1
+        
+        # Use larger monospace font for formulas
         formula_size = font_sizes.body + 4
         self.c.setFont(self.custom_fonts.code, formula_size)
         self.c.setFillColorRGB(*colors.text_primary)
