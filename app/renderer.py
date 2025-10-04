@@ -61,8 +61,8 @@ def download_google_font(font_family: str, cache_dir: str = None) -> dict:
     # Replace spaces with plus signs for URL
     font_name_url = font_family.replace(' ', '+')
     
-    # Google Fonts CSS API
-    css_url = f"https://fonts.googleapis.com/css2?family={font_name_url}:ital,wght@0,400;0,700;1,400;1,700&display=swap"
+    # Google Fonts CSS API - order matters: regular, italic, bold, bold-italic
+    css_url = f"https://fonts.googleapis.com/css2?family={font_name_url}:ital,wght@0,400;1,400;0,700;1,700&display=swap"
     
     font_files = {}
     
@@ -78,8 +78,8 @@ def download_google_font(font_family: str, cache_dir: str = None) -> dict:
         if not ttf_urls:
             raise ValueError(f"No TTF files found for font '{font_family}'")
         
-        # Download each variant
-        variants = ['regular', 'bold', 'italic', 'bold-italic']
+        # Download each variant - order matches CSS request: regular, italic, bold, bold-italic
+        variants = ['regular', 'italic', 'bold', 'bold-italic']
         for i, ttf_url in enumerate(ttf_urls[:4]):  # Get up to 4 variants
             variant = variants[i] if i < len(variants) else 'regular'
             
@@ -185,13 +185,13 @@ class PDFRenderer:
                     
                     if 'bold-italic' in font_files:
                         pdfmetrics.registerFont(TTFont(f'{font_base_name}-BoldItalic', font_files['bold-italic']))
-                        self.custom_self.custom_fonts.bold_italic = f'{font_base_name}-BoldItalic'
+                        self.custom_fonts.bold_italic = f'{font_base_name}-BoldItalic'
                     elif 'bold' in font_files:
-                        self.custom_self.custom_fonts.bold_italic = self.custom_fonts.bold
+                        self.custom_fonts.bold_italic = self.custom_fonts.bold
                     elif 'italic' in font_files:
-                        self.custom_self.custom_fonts.bold_italic = self.custom_fonts.italic
+                        self.custom_fonts.bold_italic = self.custom_fonts.italic
                     else:
-                        self.custom_self.custom_fonts.bold_italic = self.custom_fonts.body
+                        self.custom_fonts.bold_italic = self.custom_fonts.body
                     
                     print(f"Successfully loaded Google Font: {document.meta.font_family}")
                 else:
