@@ -10,11 +10,16 @@ License: MIT
 import time
 import logging
 import base64
+import uuid
+import os
+import asyncio
+from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import Response, JSONResponse
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi.responses import Response, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.models import Document
 from app.renderer import render_document
@@ -26,6 +31,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Create temp directory for PDFs
+TEMP_DIR = Path("/tmp/sketchnote-pdfs")
+TEMP_DIR.mkdir(exist_ok=True)
+MAX_PDF_AGE = 3600  # 1 hour
+
+
+def cleanup_old_pdfs():
+    """Delete PDFs older than 1 hour."""
+    now = time.time()
+    deleted_count = 0
+    
+    for pdf_file in TEMP_DIR.glob("*.pdf"):
+        try:
+            if now - pdf_file.stat().st_mtime > MAX_PDF_AGE:
+                pdf_file.unlink()
+                deleted_count += 1
+        except Exception as e:
+            logger.error(f"Cleanup error for {pdf_file.name}: {e}")
+    
+    if deleted_count > 0:
+        logger.info(f"Cleaned up {deleted_count} old PDF(s)")
+
+
+async def periodic_cleanup():
+    """Run cleanup every 30 minutes."""
+    while True:
+        await asyncio.sleep(1800)  # 30 minutes
+        cleanup_old_pdfs()
+
 # Create FastAPI app
 app = FastAPI(
     title="Study Note PDF Generator API",
@@ -36,6 +70,9 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
+# Mount temp directory for serving PDFs
+app.mount("/temp-pdfs", StaticFiles(directory=str(TEMP_DIR)), name="temp_pdfs")
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -44,6 +81,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background cleanup task."""
+    asyncio.create_task(periodic_cleanup())
+    logger.info("Started periodic PDF cleanup task")
 
 
 @app.middleware("http")
@@ -151,6 +195,66 @@ async def render_pdf_base64(document: Document) -> Dict[str, Any]:
             "size_bytes": len(pdf_bytes),
             "render_time_seconds": round(render_time, 3),
             "message": "PDF generated successfully. Decode pdf_base64 to get the binary PDF."
+        }
+    
+    except ValueError as e:
+        logger.error(f"Validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
+    
+    except Exception as e:
+        logger.error(f"Rendering error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Rendering error: {str(e)}")
+
+
+@app.post("/render-url")
+async def render_pdf_url(document: Document, request: Request) -> Dict[str, Any]:
+    """
+    Render a document to PDF and return a temporary download URL.
+    
+    The PDF is hosted for 1 hour and then automatically deleted.
+    Perfect for ChatGPT and other API clients.
+    
+    Args:
+        document: Document structure with metadata and content blocks
+        request: FastAPI request object (to build absolute URL)
+        
+    Returns:
+        JSON with temporary URL to download the PDF
+        
+    Raises:
+        HTTPException: On validation or rendering errors
+    """
+    try:
+        start_time = time.time()
+        
+        # Render document
+        pdf_bytes = render_document(document)
+        
+        render_time = time.time() - start_time
+        logger.info(f"Rendered document (URL) with {len(document.blocks)} blocks in {render_time:.3f}s")
+        
+        # Generate unique filename
+        file_id = str(uuid.uuid4())[:8]
+        filename = f"{file_id}_{document.meta.title or 'document'}.pdf".replace(" ", "_")
+        filepath = TEMP_DIR / filename
+        
+        # Save PDF to temp directory
+        with open(filepath, "wb") as f:
+            f.write(pdf_bytes)
+        
+        # Build absolute URL
+        base_url = str(request.base_url).rstrip('/')
+        pdf_url = f"{base_url}/temp-pdfs/{filename}"
+        
+        # Return JSON with URL
+        return {
+            "success": True,
+            "pdf_url": pdf_url,
+            "filename": f"{document.meta.title or 'document'}.pdf",
+            "size_bytes": len(pdf_bytes),
+            "render_time_seconds": round(render_time, 3),
+            "expires_in": "1 hour",
+            "message": "PDF generated successfully. Download it from pdf_url before it expires."
         }
     
     except ValueError as e:

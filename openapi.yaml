@@ -144,6 +144,50 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /render-url:
+    post:
+      summary: Render PDF and Get Temporary URL
+      description: Generates a PDF and returns a temporary URL for download (hosted for 1 hour). Perfect for ChatGPT and API clients.
+      operationId: renderPdfUrl
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Document'
+            example:
+              meta:
+                title: "My Notes"
+                font_family: "Roboto"
+              blocks:
+                - type: heading
+                  level: 1
+                  text:
+                    - text: "Study Notes"
+                      bold: true
+                - type: paragraph
+                  text:
+                    - text: "This is a sample document."
+      responses:
+        '200':
+          description: Successfully generated PDF with temporary URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PdfUrlResponse'
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   schemas:
     Document:
@@ -568,3 +612,41 @@ components:
           type: string
           description: Human-readable success message
           example: "PDF generated successfully. Decode pdf_base64 to get the binary PDF."
+
+    PdfUrlResponse:
+      type: object
+      required:
+        - success
+        - pdf_url
+        - filename
+        - size_bytes
+      properties:
+        success:
+          type: boolean
+          description: Whether the PDF was generated successfully
+          example: true
+        pdf_url:
+          type: string
+          format: uri
+          description: Temporary URL to download the PDF (expires in 1 hour)
+          example: "https://sketchnote.onrender.com/temp-pdfs/a1b2c3d4_My_Notes.pdf"
+        filename:
+          type: string
+          description: Original filename for the PDF
+          example: "My Notes.pdf"
+        size_bytes:
+          type: integer
+          description: Size of the PDF in bytes
+          example: 32153
+        render_time_seconds:
+          type: number
+          description: Time taken to render the PDF in seconds
+          example: 0.038
+        expires_in:
+          type: string
+          description: How long the PDF will be available
+          example: "1 hour"
+        message:
+          type: string
+          description: Human-readable success message
+          example: "PDF generated successfully. Download it from pdf_url before it expires."

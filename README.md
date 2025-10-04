@@ -62,10 +62,22 @@ Open `output.pdf` to see all features in action!
 ### Endpoints
 
 #### `POST /render`
-Generate a PDF from JSON payload.
+Generate a PDF from JSON payload (returns binary PDF).
 
 **Request:** `application/json`  
 **Response:** `application/pdf`
+
+#### `POST /render-url`
+Generate a PDF and get a temporary download URL (perfect for ChatGPT).
+
+**Request:** `application/json`  
+**Response:** JSON with `pdf_url` field (hosted for 1 hour)
+
+#### `POST /render-base64`
+Generate a PDF and get base64-encoded JSON response.
+
+**Request:** `application/json`  
+**Response:** JSON with `pdf_base64` field
 
 #### `GET /health`
 Health check endpoint.
