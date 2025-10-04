@@ -13,16 +13,19 @@ import base64
 import uuid
 import os
 import asyncio
+import json
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Body
 from fastapi.responses import Response, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 
 from app.models import Document
 from app.renderer import render_document
+from app.auto_repair import AutoRepair, create_repair_summary
 
 # Configure logging
 logging.basicConfig(
@@ -118,12 +121,13 @@ async def health_check() -> Dict[str, str]:
 
 
 @app.post("/render")
-async def render_pdf(document: Document) -> Response:
+async def render_pdf(request: Request, raw_body: str = Body(..., media_type="application/json")) -> Response:
     """
-    Render a document to PDF.
+    Render a document to PDF with auto-repair for malformed JSON.
     
     Args:
-        document: Document structure with metadata and content blocks
+        request: FastAPI request object
+        raw_body: Raw request body (for auto-repair)
         
     Returns:
         PDF file as binary response
@@ -131,27 +135,73 @@ async def render_pdf(document: Document) -> Response:
     Raises:
         HTTPException: On validation or rendering errors
     """
+    repairs_applied = []
+    
     try:
         start_time = time.time()
+        
+        # Try to parse and repair JSON
+        success, repaired_json, error = AutoRepair.repair_json(raw_body)
+        if not success:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {error}")
+        
+        if repaired_json != raw_body:
+            repairs_applied.append("JSON auto-repaired")
+        
+        # Parse JSON
+        data = json.loads(repaired_json)
+        
+        # Repair document structure
+        success, data, structure_repairs = AutoRepair.repair_document_structure(data)
+        repairs_applied.extend(structure_repairs)
+        
+        # Try to validate with Pydantic
+        try:
+            document = Document(**data)
+        except ValidationError as ve:
+            # Attempt auto-fix
+            logger.warning(f"Validation failed, attempting auto-fix: {ve}")
+            success, data, fix_repairs = AutoRepair.auto_fix_validation_error(data, ve)
+            repairs_applied.extend(fix_repairs)
+            
+            if success:
+                # Try validation again
+                document = Document(**data)
+            else:
+                raise ve
         
         # Render document
         pdf_bytes = render_document(document)
         
         render_time = time.time() - start_time
+        
+        if repairs_applied:
+            logger.info(f"✓ Document repaired and rendered: {create_repair_summary(repairs_applied)}")
+        
         logger.info(f"Rendered document with {len(document.blocks)} blocks in {render_time:.3f}s")
         
-        # Return PDF
+        # Return PDF with repair info in headers
+        headers = {
+            "Content-Disposition": f'attachment; filename="{document.meta.title or "document"}.pdf"',
+            "X-Render-Time": f"{render_time:.3f}"
+        }
+        
+        if repairs_applied:
+            headers["X-Auto-Repairs"] = str(len(repairs_applied))
+            headers["X-Repairs-Summary"] = create_repair_summary(repairs_applied)[:200]
+        
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'attachment; filename="{document.meta.title or "document"}.pdf"',
-                "X-Render-Time": f"{render_time:.3f}"
-            }
+            headers=headers
         )
     
+    except ValidationError as e:
+        logger.error(f"Validation error (could not auto-fix): {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
+    
     except ValueError as e:
-        logger.error(f"Validation error: {str(e)}")
+        logger.error(f"Value error: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
     
     except Exception as e:
@@ -160,14 +210,15 @@ async def render_pdf(document: Document) -> Response:
 
 
 @app.post("/render-base64")
-async def render_pdf_base64(document: Document) -> Dict[str, Any]:
+async def render_pdf_base64(request: Request, raw_body: str = Body(..., media_type="application/json")) -> Dict[str, Any]:
     """
-    Render a document to PDF and return as base64-encoded JSON.
+    Render a document to PDF and return as base64-encoded JSON with auto-repair.
     
     Useful for API clients (like ChatGPT) that cannot handle binary PDF responses.
     
     Args:
-        document: Document structure with metadata and content blocks
+        request: FastAPI request object
+        raw_body: Raw request body (for auto-repair)
         
     Returns:
         JSON with base64-encoded PDF and metadata
@@ -175,20 +226,54 @@ async def render_pdf_base64(document: Document) -> Dict[str, Any]:
     Raises:
         HTTPException: On validation or rendering errors
     """
+    repairs_applied = []
+    
     try:
         start_time = time.time()
+        
+        # Try to parse and repair JSON
+        success, repaired_json, error = AutoRepair.repair_json(raw_body)
+        if not success:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {error}")
+        
+        if repaired_json != raw_body:
+            repairs_applied.append("JSON auto-repaired")
+        
+        # Parse JSON
+        data = json.loads(repaired_json)
+        
+        # Repair document structure
+        success, data, structure_repairs = AutoRepair.repair_document_structure(data)
+        repairs_applied.extend(structure_repairs)
+        
+        # Try to validate with Pydantic
+        try:
+            document = Document(**data)
+        except ValidationError as ve:
+            logger.warning(f"Validation failed, attempting auto-fix: {ve}")
+            success, data, fix_repairs = AutoRepair.auto_fix_validation_error(data, ve)
+            repairs_applied.extend(fix_repairs)
+            
+            if success:
+                document = Document(**data)
+            else:
+                raise ve
         
         # Render document
         pdf_bytes = render_document(document)
         
         render_time = time.time() - start_time
+        
+        if repairs_applied:
+            logger.info(f"✓ Document repaired and rendered: {create_repair_summary(repairs_applied)}")
+        
         logger.info(f"Rendered document (base64) with {len(document.blocks)} blocks in {render_time:.3f}s")
         
         # Encode to base64
         pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
         
-        # Return JSON
-        return {
+        # Return JSON with repair info
+        result = {
             "success": True,
             "pdf_base64": pdf_base64,
             "filename": f"{document.meta.title or 'document'}.pdf",
@@ -196,9 +281,22 @@ async def render_pdf_base64(document: Document) -> Dict[str, Any]:
             "render_time_seconds": round(render_time, 3),
             "message": "PDF generated successfully. Decode pdf_base64 to get the binary PDF."
         }
+        
+        if repairs_applied:
+            result["auto_repairs"] = {
+                "count": len(repairs_applied),
+                "summary": create_repair_summary(repairs_applied),
+                "details": repairs_applied
+            }
+        
+        return result
+    
+    except ValidationError as e:
+        logger.error(f"Validation error (could not auto-fix): {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
     
     except ValueError as e:
-        logger.error(f"Validation error: {str(e)}")
+        logger.error(f"Value error: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
     
     except Exception as e:
@@ -207,16 +305,16 @@ async def render_pdf_base64(document: Document) -> Dict[str, Any]:
 
 
 @app.post("/render-url")
-async def render_pdf_url(document: Document, request: Request) -> Dict[str, Any]:
+async def render_pdf_url(request: Request, raw_body: str = Body(..., media_type="application/json")) -> Dict[str, Any]:
     """
-    Render a document to PDF and return a temporary download URL.
+    Render a document to PDF and return a temporary download URL with auto-repair.
     
     The PDF is hosted for 1 hour and then automatically deleted.
     Perfect for ChatGPT and other API clients.
     
     Args:
-        document: Document structure with metadata and content blocks
         request: FastAPI request object (to build absolute URL)
+        raw_body: Raw request body (for auto-repair)
         
     Returns:
         JSON with temporary URL to download the PDF
@@ -224,13 +322,47 @@ async def render_pdf_url(document: Document, request: Request) -> Dict[str, Any]
     Raises:
         HTTPException: On validation or rendering errors
     """
+    repairs_applied = []
+    
     try:
         start_time = time.time()
+        
+        # Try to parse and repair JSON
+        success, repaired_json, error = AutoRepair.repair_json(raw_body)
+        if not success:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {error}")
+        
+        if repaired_json != raw_body:
+            repairs_applied.append("JSON auto-repaired")
+        
+        # Parse JSON
+        data = json.loads(repaired_json)
+        
+        # Repair document structure
+        success, data, structure_repairs = AutoRepair.repair_document_structure(data)
+        repairs_applied.extend(structure_repairs)
+        
+        # Try to validate with Pydantic
+        try:
+            document = Document(**data)
+        except ValidationError as ve:
+            logger.warning(f"Validation failed, attempting auto-fix: {ve}")
+            success, data, fix_repairs = AutoRepair.auto_fix_validation_error(data, ve)
+            repairs_applied.extend(fix_repairs)
+            
+            if success:
+                document = Document(**data)
+            else:
+                raise ve
         
         # Render document
         pdf_bytes = render_document(document)
         
         render_time = time.time() - start_time
+        
+        if repairs_applied:
+            logger.info(f"✓ Document repaired and rendered: {create_repair_summary(repairs_applied)}")
+        
         logger.info(f"Rendered document (URL) with {len(document.blocks)} blocks in {render_time:.3f}s")
         
         # Generate unique filename
@@ -246,8 +378,8 @@ async def render_pdf_url(document: Document, request: Request) -> Dict[str, Any]
         base_url = str(request.base_url).rstrip('/')
         pdf_url = f"{base_url}/temp-pdfs/{filename}"
         
-        # Return JSON with URL
-        return {
+        # Return JSON with URL and repair info
+        result = {
             "success": True,
             "pdf_url": pdf_url,
             "filename": f"{document.meta.title or 'document'}.pdf",
@@ -256,9 +388,22 @@ async def render_pdf_url(document: Document, request: Request) -> Dict[str, Any]
             "expires_in": "1 hour",
             "message": "PDF generated successfully. Download it from pdf_url before it expires."
         }
+        
+        if repairs_applied:
+            result["auto_repairs"] = {
+                "count": len(repairs_applied),
+                "summary": create_repair_summary(repairs_applied),
+                "details": repairs_applied
+            }
+        
+        return result
+    
+    except ValidationError as e:
+        logger.error(f"Validation error (could not auto-fix): {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
     
     except ValueError as e:
-        logger.error(f"Validation error: {str(e)}")
+        logger.error(f"Value error: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
     
     except Exception as e:
