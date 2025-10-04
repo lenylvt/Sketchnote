@@ -103,6 +103,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /render-base64:
+    post:
+      summary: Render PDF Document as Base64
+      description: Generates a PDF and returns it as base64-encoded JSON (useful for API clients that cannot handle binary responses).
+      operationId: renderPdfBase64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Document'
+            example:
+              meta:
+                title: "Sample Document"
+                font_family: "Roboto"
+              blocks:
+                - type: heading
+                  level: 1
+                  text:
+                    - text: "Hello World"
+                      bold: true
+      responses:
+        '200':
+          description: Successfully generated PDF as base64
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PdfBase64Response'
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   schemas:
     Document:
@@ -494,3 +535,36 @@ components:
         detail:
           type: string
           description: Additional error details
+
+    PdfBase64Response:
+      type: object
+      required:
+        - success
+        - pdf_base64
+        - filename
+        - size_bytes
+      properties:
+        success:
+          type: boolean
+          description: Whether the PDF was generated successfully
+          example: true
+        pdf_base64:
+          type: string
+          description: Base64-encoded PDF content
+          example: "JVBERi0xLjQKJeLj..."
+        filename:
+          type: string
+          description: Suggested filename for the PDF
+          example: "document.pdf"
+        size_bytes:
+          type: integer
+          description: Size of the PDF in bytes
+          example: 32153
+        render_time_seconds:
+          type: number
+          description: Time taken to render the PDF in seconds
+          example: 0.038
+        message:
+          type: string
+          description: Human-readable success message
+          example: "PDF generated successfully. Decode pdf_base64 to get the binary PDF."

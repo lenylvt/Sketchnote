@@ -9,6 +9,7 @@ License: MIT
 
 import time
 import logging
+import base64
 from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException, Request
@@ -104,6 +105,53 @@ async def render_pdf(document: Document) -> Response:
                 "X-Render-Time": f"{render_time:.3f}"
             }
         )
+    
+    except ValueError as e:
+        logger.error(f"Validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
+    
+    except Exception as e:
+        logger.error(f"Rendering error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Rendering error: {str(e)}")
+
+
+@app.post("/render-base64")
+async def render_pdf_base64(document: Document) -> Dict[str, Any]:
+    """
+    Render a document to PDF and return as base64-encoded JSON.
+    
+    Useful for API clients (like ChatGPT) that cannot handle binary PDF responses.
+    
+    Args:
+        document: Document structure with metadata and content blocks
+        
+    Returns:
+        JSON with base64-encoded PDF and metadata
+        
+    Raises:
+        HTTPException: On validation or rendering errors
+    """
+    try:
+        start_time = time.time()
+        
+        # Render document
+        pdf_bytes = render_document(document)
+        
+        render_time = time.time() - start_time
+        logger.info(f"Rendered document (base64) with {len(document.blocks)} blocks in {render_time:.3f}s")
+        
+        # Encode to base64
+        pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+        
+        # Return JSON
+        return {
+            "success": True,
+            "pdf_base64": pdf_base64,
+            "filename": f"{document.meta.title or 'document'}.pdf",
+            "size_bytes": len(pdf_bytes),
+            "render_time_seconds": round(render_time, 3),
+            "message": "PDF generated successfully. Decode pdf_base64 to get the binary PDF."
+        }
     
     except ValueError as e:
         logger.error(f"Validation error: {str(e)}")
