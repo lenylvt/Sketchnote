@@ -272,13 +272,33 @@ class PDFRenderer:
         # Move down for spacing
         self.y -= spacing.section_gap
         
-        # Render rich text with wrapping
+        # Render rich text with wrapping and justification
         lines = self._wrap_rich_text(heading.text, self.content_width, font_size)
         
-        for line_spans in lines:
+        for line_idx, line_spans in enumerate(lines):
+            is_last_line = (line_idx == len(lines) - 1)
+            
+            # Calculate total text width for justification
+            if len(lines) > 1 and not is_last_line:
+                # Justify (except last line)
+                total_text_width = 0.0
+                for span in line_spans:
+                    if getattr(span, "math", False):
+                        total_text_width += self._measure_math_width(span.text, font_size)
+                    else:
+                        total_text_width += self.c.stringWidth(span.text, self._get_font_name(span), font_size)
+                extra_space = (self.content_width - total_text_width) / max(len(line_spans) - 1, 1)
+            else:
+                # Left align for single-line or last line
+                extra_space = 0
+            
             x_offset = self.x
-            for span in line_spans:
+            for span_idx, span in enumerate(line_spans):
                 x_offset = self._render_rich_text_span(span, x_offset, self.y, font_size, use_black=True)
+                # Add extra space between words for justification
+                if extra_space > 0 and span_idx < len(line_spans) - 1:
+                    x_offset += extra_space
+            
             self.y -= font_size + 4
         
         self.y -= spacing.paragraph_gap - 4
@@ -533,18 +553,43 @@ class PDFRenderer:
         return x
     
     def _render_caption(self, caption: Caption):
-        """Render a caption block (small italic text)."""
-        self._check_page_break(font_sizes.caption * 2)
+        """Render a caption block (small italic text) with wrapping and justification."""
+        self._check_page_break(font_sizes.caption * 5)
         
         self.y -= spacing.caption_gap
         
-        self.c.setFont(self.custom_fonts.caption, font_sizes.caption)
-        self.c.setFillColorRGB(*colors.text_muted)
+        # Wrap rich text and render line by line with justification
+        lines = self._wrap_rich_text(caption.text, self.content_width, font_sizes.caption)
         
-        text = "".join([span.text for span in caption.text])
-        self.c.drawString(self.x, self.y - font_sizes.caption, text)
+        for line_idx, line_spans in enumerate(lines):
+            is_last_line = (line_idx == len(lines) - 1)
+            
+            # Calculate total text width for justification
+            if len(lines) > 1 and not is_last_line:
+                # Justify (except last line)
+                total_text_width = 0.0
+                for span in line_spans:
+                    if getattr(span, "math", False):
+                        total_text_width += self._measure_math_width(span.text, font_sizes.caption)
+                    else:
+                        total_text_width += self.c.stringWidth(span.text, self._get_font_name(span), font_sizes.caption)
+                extra_space = (self.content_width - total_text_width) / max(len(line_spans) - 1, 1)
+            else:
+                # Left align for single-line or last line
+                extra_space = 0
+            
+            x_offset = self.x
+            for span_idx, span in enumerate(line_spans):
+                # Use muted color for captions
+                self.c.setFillColorRGB(*colors.text_muted)
+                x_offset = self._render_rich_text_span(span, x_offset, self.y, font_sizes.caption)
+                # Add extra space between words for justification
+                if extra_space > 0 and span_idx < len(line_spans) - 1:
+                    x_offset += extra_space
+            
+            self.y -= font_sizes.caption + 4
         
-        self.y -= font_sizes.caption + spacing.caption_gap
+        self.y -= spacing.caption_gap - 4
         
         self.c.setFillColorRGB(*colors.text_primary)
     
@@ -675,10 +720,12 @@ class PDFRenderer:
         self.y -= spacing.paragraph_gap
     
     def _render_list_item(self, item: ListItem, variant: str, indent_level: int):
-        """Render a single list item."""
+        """Render a single list item with wrapping and justification."""
         indent = self.x + (indent_level * spacing.list_indent)
+        text_start_x = indent + spacing.list_indent
+        available_width = self.content_width - (text_start_x - self.x)
         
-        self._check_page_break(font_sizes.body * 2)
+        self._check_page_break(font_sizes.body * 5)
         
         # Render marker
         marker = ""
@@ -718,11 +765,37 @@ class PDFRenderer:
             self.c.setFillColorRGB(*marker_color)
             self.c.drawString(indent, self.y - font_sizes.body, marker)
         
-        # Render item text
+        # Render item text with wrapping and justification
         if item.text:
-            self._render_inline_sequence(item.text, indent + spacing.list_indent, self.y, font_sizes.body)
-        
-        self.y -= font_sizes.body + spacing.list_item_gap
+            lines = self._wrap_rich_text(item.text, available_width, font_sizes.body)
+            
+            for line_idx, line_spans in enumerate(lines):
+                is_last_line = (line_idx == len(lines) - 1)
+                
+                # Calculate total text width for justification
+                if len(lines) > 1 and not is_last_line:
+                    # Justify (except last line)
+                    total_text_width = 0.0
+                    for span in line_spans:
+                        if getattr(span, "math", False):
+                            total_text_width += self._measure_math_width(span.text, font_sizes.body)
+                        else:
+                            total_text_width += self.c.stringWidth(span.text, self._get_font_name(span), font_sizes.body)
+                    extra_space = (available_width - total_text_width) / max(len(line_spans) - 1, 1)
+                else:
+                    # Left align for single-line or last line
+                    extra_space = 0
+                
+                x_offset = text_start_x
+                for span_idx, span in enumerate(line_spans):
+                    x_offset = self._render_rich_text_span(span, x_offset, self.y, font_sizes.body)
+                    # Add extra space between words for justification
+                    if extra_space > 0 and span_idx < len(line_spans) - 1:
+                        x_offset += extra_space
+                
+                self.y -= font_sizes.body + spacing.list_item_gap
+        else:
+            self.y -= font_sizes.body + spacing.list_item_gap
         
         # Render children (with slightly more indent for nested items)
         if item.children:
@@ -865,11 +938,38 @@ class PDFRenderer:
                     self.c.setLineWidth(0.5)
                     self.c.line(current_x, current_y, current_x, current_y - row_height)
                 
-                # Cell text with rich text support
+                # Cell text with rich text support, wrapping and justification
                 if cell:
-                    x_offset = current_x + spacing.table_cell_padding
-                    text_y = current_y - row_height / 2 - font_sizes.body / 2 + 2
-                    self._render_inline_sequence(cell, x_offset, text_y + font_sizes.body, font_sizes.body)
+                    cell_width = col_widths[col_idx] - 2 * spacing.table_cell_padding
+                    lines = self._wrap_rich_text(cell, cell_width, font_sizes.body)
+                    
+                    # Render each line with justification
+                    text_y = current_y - spacing.table_cell_padding - font_sizes.body
+                    for line_idx, line_spans in enumerate(lines):
+                        is_last_line = (line_idx == len(lines) - 1)
+                        
+                        # Calculate total text width for justification
+                        if len(lines) > 1 and not is_last_line:
+                            # Justify (except last line)
+                            total_text_width = 0.0
+                            for span in line_spans:
+                                if getattr(span, "math", False):
+                                    total_text_width += self._measure_math_width(span.text, font_sizes.body)
+                                else:
+                                    total_text_width += self.c.stringWidth(span.text, self._get_font_name(span), font_sizes.body)
+                            extra_space = (cell_width - total_text_width) / max(len(line_spans) - 1, 1)
+                        else:
+                            # Left align for single-line or last line
+                            extra_space = 0
+                        
+                        x_offset = current_x + spacing.table_cell_padding
+                        for span_idx, span in enumerate(line_spans):
+                            x_offset = self._render_rich_text_span(span, x_offset, text_y + font_sizes.body, font_sizes.body)
+                            # Add extra space between words for justification
+                            if extra_space > 0 and span_idx < len(line_spans) - 1:
+                                x_offset += extra_space
+                        
+                        text_y -= font_sizes.body + 2
                 
                 current_x += col_widths[col_idx]
             
