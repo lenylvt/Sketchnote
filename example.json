@@ -1,0 +1,388 @@
+{
+  "meta": {
+    "title": "Study Notes - Complete Feature Demo",
+    "author": "PDF Generator",
+    "page_size": "A4",
+    "margin_mm": 20,
+    "font_family": "Open Sans"
+  },
+  "blocks": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": [
+        {"text": "PDF Generator: ", "bold": false},
+        {"text": "Complete", "bold": true, "highlight": "yellow"},
+        {"text": " Feature Set", "bold": true, "color": "blue"}
+      ]
+    },
+    {
+      "type": "caption",
+      "text": [
+        {"text": "Demonstration of all rendering capabilities with automatic text wrapping"}
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": [
+        {"text": "This document showcases every feature. Text automatically wraps when it becomes too long, preventing cropping. Combine "},
+        {"text": "bold", "bold": true},
+        {"text": " and "},
+        {"text": "italic", "italic": true},
+        {"text": " with "},
+        {"text": "highlights", "highlight": "yellow"},
+        {"text": " and "},
+        {"text": "colors", "color": "purple"},
+        {"text": ". Even "},
+        {"text": "code", "code": true, "highlight": "aqua"},
+        {"text": " works perfectly!"}
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [
+        {"text": "Rich Text Formatting", "bold": true}
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": [
+        {"text": "All 9 highlight colors: "},
+        {"text": "yellow", "highlight": "yellow"},
+        {"text": ", "},
+        {"text": "green", "highlight": "green"},
+        {"text": ", "},
+        {"text": "aqua", "highlight": "aqua"},
+        {"text": ", "},
+        {"text": "blue", "highlight": "blue"},
+        {"text": ", "},
+        {"text": "cornflower", "highlight": "cornflower"},
+        {"text": ", "},
+        {"text": "lavender", "highlight": "lavender"},
+        {"text": ", "},
+        {"text": "pink", "highlight": "pink"},
+        {"text": ", "},
+        {"text": "peach", "highlight": "peach"},
+        {"text": ", "},
+        {"text": "gray", "highlight": "gray"}
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": [
+        {"text": "All 6 text colors: "},
+        {"text": "blue", "color": "blue", "bold": true},
+        {"text": ", "},
+        {"text": "purple", "color": "purple", "bold": true},
+        {"text": ", "},
+        {"text": "magenta", "color": "magenta", "bold": true},
+        {"text": ", "},
+        {"text": "orange", "color": "orange", "bold": true},
+        {"text": ", "},
+        {"text": "gold", "color": "gold", "bold": true},
+        {"text": ", "},
+        {"text": "teal", "color": "teal", "bold": true}
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [
+        {"text": "Lists", "bold": true}
+      ]
+    },
+    {
+      "type": "list",
+      "variant": "bullet",
+      "items": [
+        {
+          "text": [
+            {"text": "Bullet lists for unordered items"}
+          ]
+        },
+        {
+          "text": [
+            {"text": "Support "},
+            {"text": "rich text", "bold": true, "highlight": "yellow"},
+            {"text": " in items"}
+          ]
+        },
+        {
+          "text": [
+            {"text": "Can include "},
+            {"text": "code", "code": true},
+            {"text": " and "},
+            {"text": "colors", "color": "purple"}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "list",
+      "variant": "number",
+      "items": [
+        {
+          "text": [
+            {"text": "First numbered item"}
+          ]
+        },
+        {
+          "text": [
+            {"text": "Second numbered item"}
+          ]
+        },
+        {
+          "text": [
+            {"text": "Third numbered item"}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "list",
+      "variant": "task",
+      "items": [
+        {
+          "text": [
+            {"text": "Completed task"}
+          ],
+          "checked": true
+        },
+        {
+          "text": [
+            {"text": "Pending task"}
+          ],
+          "checked": false
+        },
+        {
+          "text": [
+            {"text": "Another pending task"}
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "type": "break",
+      "strength": "regular"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [
+        {"text": "Code Blocks", "bold": true}
+      ]
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "content": "def generate_pdf(data):\n    \"\"\"\n    Generate a beautiful PDF from JSON.\n    \"\"\"\n    renderer = PDFRenderer(data)\n    return renderer.render()"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [
+        {"text": "Math Formulas", "bold": true}
+      ]
+    },
+    {
+      "type": "formula",
+      "latex": "E = mc^2"
+    },
+    {
+      "type": "formula",
+      "latex": "\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [
+        {"text": "Tables", "bold": true}
+      ]
+    },
+    {
+      "type": "table",
+      "columns": 3,
+      "widths": [2, 2, 1],
+      "rows": [
+        {
+          "cells": [
+            [{"text": "Feature", "bold": true}],
+            [{"text": "Description", "bold": true}],
+            [{"text": "Status", "bold": true}]
+          ]
+        },
+        {
+          "cells": [
+            [{"text": "Text Wrapping", "bold": false}],
+            [{"text": "Auto wraps long text"}],
+            [{"text": "✓", "color": "blue"}]
+          ]
+        },
+        {
+          "cells": [
+            [{"text": "Custom Fonts", "bold": false}],
+            [{"text": "Google Fonts support"}],
+            [{"text": "✓", "color": "blue"}]
+          ]
+        },
+        {
+          "cells": [
+            [{"text": "Rich Text", "bold": false}],
+            [{"text": "Bold, italic, highlights"}],
+            [{"text": "✓", "color": "blue"}]
+          ]
+        }
+      ]
+    },
+    {
+      "type": "break",
+      "strength": "strong"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [
+        {"text": "Ornamental Breaks", "bold": true}
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": [
+        {"text": "Four decorative separator styles:"}
+      ]
+    },
+    {
+      "type": "break",
+      "strength": "extra_light"
+    },
+    {
+      "type": "caption",
+      "text": [
+        {"text": "Extra Light - subtle dots"}
+      ]
+    },
+    {
+      "type": "break",
+      "strength": "light"
+    },
+    {
+      "type": "caption",
+      "text": [
+        {"text": "Light - gentle curve"}
+      ]
+    },
+    {
+      "type": "break",
+      "strength": "regular"
+    },
+    {
+      "type": "caption",
+      "text": [
+        {"text": "Regular - smooth flowing wave"}
+      ]
+    },
+    {
+      "type": "break",
+      "strength": "strong"
+    },
+    {
+      "type": "caption",
+      "text": [
+        {"text": "Strong - thick artistic separator"}
+      ]
+    },
+    {
+      "type": "page_break"
+    },
+    {
+      "type": "heading",
+      "level": 1,
+      "text": [
+        {"text": "Exercise Areas", "bold": true}
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": [
+        {"text": "Create spaces for handwritten notes and exercises:"}
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": [
+        {"text": "Ruled Lines", "bold": true}
+      ]
+    },
+    {
+      "type": "exercise",
+      "variant": "ruled",
+      "height_mm": 40
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": [
+        {"text": "Dot Grid", "bold": true}
+      ]
+    },
+    {
+      "type": "exercise",
+      "variant": "dotgrid",
+      "height_mm": 40
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": [
+        {"text": "Square Grid", "bold": true}
+      ]
+    },
+    {
+      "type": "exercise",
+      "variant": "square",
+      "height_mm": 40
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": [
+        {"text": "Blank Space", "bold": true}
+      ]
+    },
+    {
+      "type": "exercise",
+      "variant": "blank",
+      "height_mm": 30
+    },
+    {
+      "type": "break",
+      "strength": "strong"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": [
+        {"text": "Custom Fonts", "bold": true}
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": [
+        {"text": "This document uses "},
+        {"text": "Open Sans", "bold": true, "highlight": "yellow"},
+        {"text": " from Google Fonts. Specify any font with: "},
+        {"text": "\"font_family\": \"Roboto\"", "code": true, "highlight": "aqua"},
+        {"text": " in the meta section."}
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": [
+        {"text": "Popular choices: Roboto, Lato, Montserrat, Source Sans Pro, Lora, Merriweather, and thousands more from fonts.google.com"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,508 @@
+openapi: 3.1.0
+info:
+  title: Study Note PDF Generator API
+  version: 1.0.0
+  description: |
+    Production-ready API for generating beautifully formatted study-note style PDFs.
+    
+    Supports rich text formatting, multiple content blocks (headings, lists, tables, code, math),
+    ornamental breaks, exercise areas, and more. Typography uses warm brown headings with modern fonts.
+    
+    **Features:**
+    - Rich text with bold, italic, code, 9 highlight colors, 6 text colors, emoji support
+    - Headings (H1/H2/H3), paragraphs, captions
+    - Lists: bullet, numbered, task (checkboxes), toggle (collapsible markers)
+    - Ornamental breaks (extra-light, light, regular, strong)
+    - Page breaks
+    - Code blocks with syntax language hints
+    - Math formulas (LaTeX)
+    - Tables with custom column widths
+    - Embedded images (local or URL, fit modes)
+    - Exercise areas (ruled, dot grid, square grid, blank)
+    
+  contact:
+    name: API Support
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+paths:
+  /health:
+    get:
+      summary: Health Check
+      description: Returns the health status of the service
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /render:
+    post:
+      summary: Render PDF Document
+      description: |
+        Generates a PDF from a structured document payload.
+        
+        The document consists of metadata and an array of content blocks.
+        Each block is rendered sequentially with automatic pagination.
+        
+        **Rendering Details:**
+        - Page size: A4 (210×297 mm) or LETTER (8.5×11 in)
+        - Margins: configurable (default 20 mm)
+        - Fonts: IBM Plex Sans (headings), Inter (body), DejaVu Sans Mono (code)
+        - Colors: warm brown headings (#6E6346), dark text (#2B2B2B)
+        - Emoji support via font fallback
+        
+      operationId: renderPdf
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Document'
+            example:
+              meta:
+                title: "Introduction to Algorithms"
+                author: "Jane Doe"
+                page_size: "A4"
+                margin_mm: 20
+                font_family: "Open Sans"
+              blocks:
+                - type: heading
+                  level: 1
+                  text:
+                    - text: "Chapter 1: Foundations"
+                - type: paragraph
+                  text:
+                    - text: "This chapter introduces "
+                    - text: "fundamental concepts"
+                      bold: true
+                    - text: " in computer science."
+      responses:
+        '200':
+          description: Successfully generated PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Document:
+      type: object
+      required:
+        - blocks
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Block'
+          description: Ordered list of content blocks to render
+
+    Meta:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Document title (appears in PDF metadata)
+          example: "Study Notes"
+        author:
+          type: string
+          description: Document author (appears in PDF metadata)
+          example: "Jane Doe"
+        page_size:
+          type: string
+          enum: [A4, LETTER]
+          default: A4
+          description: |
+            Page size for the document
+            - A4: 210×297 mm (ISO standard)
+            - LETTER: 8.5×11 in (US standard)
+        margin_mm:
+          type: number
+          default: 20
+          minimum: 0
+          maximum: 50
+          description: Page margin in millimeters (applied to all sides)
+        font_family:
+          type: string
+          description: |
+            Google Font family name to use for the document.
+            The system automatically downloads and embeds the font.
+            Examples: "Roboto", "Open Sans", "Lato", "Lora", "Montserrat"
+            Visit https://fonts.google.com to browse available fonts.
+            If not specified, defaults to Helvetica.
+          example: "Open Sans"
+
+    Block:
+      oneOf:
+        - $ref: '#/components/schemas/Heading'
+        - $ref: '#/components/schemas/Paragraph'
+        - $ref: '#/components/schemas/Caption'
+        - $ref: '#/components/schemas/List'
+        - $ref: '#/components/schemas/Break'
+        - $ref: '#/components/schemas/PageBreak'
+        - $ref: '#/components/schemas/Code'
+        - $ref: '#/components/schemas/Formula'
+        - $ref: '#/components/schemas/Table'
+        - $ref: '#/components/schemas/Image'
+        - $ref: '#/components/schemas/ExerciseArea'
+      discriminator:
+        propertyName: type
+        mapping:
+          heading: '#/components/schemas/Heading'
+          paragraph: '#/components/schemas/Paragraph'
+          caption: '#/components/schemas/Caption'
+          list: '#/components/schemas/List'
+          break: '#/components/schemas/Break'
+          page_break: '#/components/schemas/PageBreak'
+          code: '#/components/schemas/Code'
+          formula: '#/components/schemas/Formula'
+          table: '#/components/schemas/Table'
+          image: '#/components/schemas/Image'
+          exercise: '#/components/schemas/ExerciseArea'
+
+    Heading:
+      type: object
+      required:
+        - type
+        - level
+        - text
+      properties:
+        type:
+          type: string
+          enum: [heading]
+        level:
+          type: integer
+          enum: [1, 2, 3]
+          description: |
+            Heading level:
+            - 1: H1, 32pt, large section titles
+            - 2: H2, 24pt, subsection titles
+            - 3: H3, 18pt, sub-subsection titles
+        text:
+          type: array
+          items:
+            $ref: '#/components/schemas/RichText'
+          description: Rich text spans for heading content
+
+    Paragraph:
+      type: object
+      required:
+        - type
+        - text
+      properties:
+        type:
+          type: string
+          enum: [paragraph]
+        text:
+          type: array
+          items:
+            $ref: '#/components/schemas/RichText'
+          description: Rich text spans for paragraph content (12pt body text)
+
+    Caption:
+      type: object
+      required:
+        - type
+        - text
+      properties:
+        type:
+          type: string
+          enum: [caption]
+        text:
+          type: array
+          items:
+            $ref: '#/components/schemas/RichText'
+          description: Rich text spans for caption content (10pt italic)
+
+    List:
+      type: object
+      required:
+        - type
+        - variant
+        - items
+      properties:
+        type:
+          type: string
+          enum: [list]
+        variant:
+          type: string
+          enum: [bullet, number, task, toggle]
+          description: |
+            List style:
+            - bullet: unordered list with • marker
+            - number: ordered list with 1., 2., 3. markers
+            - task: checklist with ☐ (unchecked) or ☑ (checked) markers
+            - toggle: collapsible list with ▶ (collapsed) or ▼ (expanded) markers
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ListItem'
+
+    ListItem:
+      type: object
+      properties:
+        text:
+          type: array
+          items:
+            $ref: '#/components/schemas/RichText'
+          description: Content of the list item
+        checked:
+          type: boolean
+          description: For task lists, whether the item is checked (default false)
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ListItem'
+          description: Nested list items (for toggle lists)
+
+    Break:
+      type: object
+      required:
+        - type
+        - strength
+      properties:
+        type:
+          type: string
+          enum: [break]
+        strength:
+          type: string
+          enum: [extra_light, light, regular, strong]
+          description: |
+            Ornamental break style (séparateur ornemental):
+            - extra_light: 3 short faint curls (3 courtes boucles légères)
+            - light: long faint S-curve line (ligne en S allongée légère)
+            - regular: long wave line (ligne ondulée)
+            - strong: thick baseline with subtle wobble (ligne de base épaisse avec ondulation subtile)
+
+    PageBreak:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [page_break]
+      description: Forces a new page
+
+    Code:
+      type: object
+      required:
+        - type
+        - content
+      properties:
+        type:
+          type: string
+          enum: [code]
+        language:
+          type: string
+          description: Programming language for syntax highlighting hint (e.g., "python", "javascript")
+          example: python
+        content:
+          type: string
+          description: Code content with preserved whitespace
+
+    Formula:
+      type: object
+      required:
+        - type
+        - latex
+      properties:
+        type:
+          type: string
+          enum: [formula]
+        latex:
+          type: string
+          description: LaTeX math formula (e.g., "E = mc^2")
+          example: "\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}"
+
+    Table:
+      type: object
+      required:
+        - type
+        - columns
+        - rows
+      properties:
+        type:
+          type: string
+          enum: [table]
+        columns:
+          type: integer
+          minimum: 1
+          description: Number of columns
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableRow'
+          description: Table rows
+        widths:
+          type: array
+          items:
+            type: number
+            minimum: 0
+          description: Optional column widths (proportional ratios, e.g., [2, 1, 1])
+
+    TableRow:
+      type: object
+      required:
+        - cells
+      properties:
+        cells:
+          type: array
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/RichText'
+          description: Array of cell contents (each cell is an array of RichText)
+
+    Image:
+      type: object
+      required:
+        - type
+        - src
+      properties:
+        type:
+          type: string
+          enum: [image]
+        src:
+          type: string
+          description: Image source (file path or URL)
+          example: "/path/to/image.png"
+        alt:
+          type: string
+          description: Alt text for accessibility
+        width_mm:
+          type: number
+          minimum: 0
+          description: Image width in millimeters (aspect ratio preserved if only width given)
+        height_mm:
+          type: number
+          minimum: 0
+          description: Image height in millimeters (aspect ratio preserved if only height given)
+        fit:
+          type: string
+          enum: [contain, cover]
+          default: contain
+          description: |
+            Image fit mode:
+            - contain: scale to fit within dimensions, preserving aspect ratio
+            - cover: scale to fill dimensions, cropping if needed
+
+    ExerciseArea:
+      type: object
+      required:
+        - type
+        - variant
+        - height_mm
+      properties:
+        type:
+          type: string
+          enum: [exercise]
+        variant:
+          type: string
+          enum: [ruled, dotgrid, square, blank]
+          description: |
+            Exercise area pattern (zone d'exercice):
+            - ruled: horizontal lines every 12pt (lignes horizontales)
+            - dotgrid: dots every 10pt (grille de points)
+            - square: 5mm grid (grille carrée)
+            - blank: plain rounded rectangle (zone vierge)
+        height_mm:
+          type: number
+          minimum: 10
+          maximum: 200
+          description: Height of the exercise area in millimeters
+
+    RichText:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Text content
+        bold:
+          type: boolean
+          default: false
+          description: Bold formatting
+        italic:
+          type: boolean
+          default: false
+          description: Italic formatting
+        code:
+          type: boolean
+          default: false
+          description: Monospace code formatting
+        highlight:
+          type: string
+          enum: [yellow, green, aqua, blue, cornflower, lavender, pink, peach, gray]
+          description: |
+            Background highlight color (surligneur):
+            - yellow: #FFF59D (jaune)
+            - green: #B9F6CA (vert)
+            - aqua: #A7FFEB (aqua)
+            - blue: #B3E5FC (bleu)
+            - cornflower: #D0E2FF (bleu bleuet)
+            - lavender: #E1BEE7 (lavande)
+            - pink: #F8BBD0 (rose)
+            - peach: #FFCCBC (pêche)
+            - gray: #E0E0E0 (gris)
+        color:
+          type: string
+          enum: [blue, purple, magenta, orange, gold, teal]
+          description: |
+            Text color (couleur de texte):
+            - blue: #1E88E5 (bleu)
+            - purple: #7E57C2 (violet)
+            - magenta: #EC407A (magenta)
+            - orange: #FB8C00 (orange)
+            - gold: #FBC02D (or)
+            - teal: #00897B (sarcelle)
+        emoji:
+          type: boolean
+          default: false
+          description: Flag to hint emoji rendering (uses fallback fonts)
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+        detail:
+          type: string
+          description: Additional error details
