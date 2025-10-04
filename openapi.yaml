@@ -50,19 +50,7 @@ paths:
   /render:
     post:
       summary: Render PDF Document
-      description: |
-        Generates a PDF from a structured document payload.
-        
-        The document consists of metadata and an array of content blocks.
-        Each block is rendered sequentially with automatic pagination.
-        
-        **Rendering Details:**
-        - Page size: A4 (210×297 mm) or LETTER (8.5×11 in)
-        - Margins: configurable (default 20 mm)
-        - Fonts: IBM Plex Sans (headings), Inter (body), DejaVu Sans Mono (code)
-        - Colors: warm brown headings (#6E6346), dark text (#2B2B2B)
-        - Emoji support via font fallback
-        
+      description: Generates a PDF from structured JSON with rich text, custom fonts, and automatic pagination.
       operationId: renderPdf
       requestBody:
         required: true
@@ -285,7 +273,7 @@ components:
         children:
           type: array
           items:
-            $ref: '#/components/schemas/ListItem'
+            type: object
           description: Nested list items (for toggle lists)
 
     Break:
