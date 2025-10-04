@@ -269,22 +269,53 @@ class PDFRenderer:
         self.c.setFillColorRGB(*colors.text_primary)
     
     def _render_paragraph(self, paragraph: Paragraph):
-        """Render a paragraph block with rich text support and wrapping."""
+        """Render a paragraph block with rich text support, wrapping, and justification."""
         # Estimate lines needed (conservative)
         self._check_page_break(font_sizes.body * 5)
         
         self.y -= spacing.paragraph_gap
         
-        # Wrap rich text and render line by line
+        # Wrap rich text and render line by line with justification
         lines = self._wrap_rich_text(paragraph.text, self.content_width, font_sizes.body)
         
-        for line_spans in lines:
+        for line_idx, line_spans in enumerate(lines):
+            is_last_line = (line_idx == len(lines) - 1)
+            
+            # Calculate total text width for justification
+            if len(lines) > 1 and not is_last_line:
+                # Justify (except last line)
+                total_text_width = sum(
+                    self.c.stringWidth(span.text, self._get_font_name(span), font_sizes.body)
+                    for span in line_spans
+                )
+                extra_space = (self.content_width - total_text_width) / max(len(line_spans) - 1, 1)
+            else:
+                # Left align for single-line or last line
+                extra_space = 0
+            
             x_offset = self.x
-            for span in line_spans:
+            for span_idx, span in enumerate(line_spans):
                 x_offset = self._render_rich_text_span(span, x_offset, self.y, font_sizes.body)
+                # Add extra space between words for justification
+                if extra_space > 0 and span_idx < len(line_spans) - 1:
+                    x_offset += extra_space
+            
             self.y -= font_sizes.body + 4
         
         self.y -= spacing.paragraph_gap - 4
+    
+    def _get_font_name(self, span: RichText) -> str:
+        """Get font name for a rich text span."""
+        if span.code:
+            return self.custom_fonts.code
+        elif span.bold and span.italic:
+            return self.custom_fonts.bold_italic
+        elif span.bold:
+            return self.custom_fonts.bold
+        elif span.italic:
+            return self.custom_fonts.italic
+        else:
+            return self.custom_fonts.body
     
     def _render_caption(self, caption: Caption):
         """Render a caption block (small italic text)."""
@@ -512,57 +543,20 @@ class PDFRenderer:
                 self._render_list_item(child, variant, indent_level + 1)
     
     def _render_break(self, break_block: Break):
-        """Render an ornamental break."""
+        """Render an ornamental break (only rounded dots style)."""
         self._check_page_break(30)
         
         self.y -= spacing.section_gap
         
         center_x = self.x + self.content_width / 2
         
-        if break_block.strength == "extra_light":
-            # Delicate dots pattern
-            self.c.setFillColorRGB(*colors.line_light)
-            
-            # Three small circles
-            for i in range(3):
-                x_pos = center_x - 10 + i * 10
-                self.c.circle(x_pos, self.y - 5, 1.5, stroke=0, fill=1)
+        # Always use delicate dots pattern (rounded style)
+        self.c.setFillColorRGB(*colors.line_light)
         
-        elif break_block.strength == "light":
-            # Elegant thin S-curve
-            self.c.setStrokeColorRGB(*colors.line_light)
-            self.c.setLineWidth(0.75)
-            
-            path = self.c.beginPath()
-            path.moveTo(center_x - 60, self.y - 5)
-            path.curveTo(center_x - 20, self.y - 10, center_x + 20, self.y, center_x + 60, self.y - 5)
-            self.c.drawPath(path, stroke=1, fill=0)
-        
-        elif break_block.strength == "regular":
-            # Smooth flowing curve
-            self.c.setStrokeColorRGB(*colors.line_strong)
-            self.c.setLineWidth(1.0)
-            
-            path = self.c.beginPath()
-            path.moveTo(center_x - 80, self.y - 5)
-            # Create smooth sine wave
-            path.curveTo(center_x - 60, self.y - 10, center_x - 40, self.y - 10, center_x - 20, self.y - 5)
-            path.curveTo(center_x, self.y, center_x + 20, self.y, center_x + 40, self.y - 5)
-            path.curveTo(center_x + 60, self.y - 10, center_x + 70, self.y - 8, center_x + 80, self.y - 5)
-            self.c.drawPath(path, stroke=1, fill=0)
-        
-        else:  # strong (keep as-is, it's good!)
-            # Thick baseline with wobble
-            self.c.setStrokeColorRGB(*colors.line_strong)
-            self.c.setLineWidth(2.0)
-            
-            path = self.c.beginPath()
-            path.moveTo(center_x - 100, self.y - 5)
-            path.curveTo(center_x - 50, self.y - 7, center_x - 50, self.y - 3, 
-                        center_x, self.y - 5)
-            path.curveTo(center_x + 50, self.y - 7, center_x + 50, self.y - 3, 
-                        center_x + 100, self.y - 5)
-            self.c.drawPath(path, stroke=1, fill=0)
+        # Three small circles
+        for i in range(3):
+            x_pos = center_x - 10 + i * 10
+            self.c.circle(x_pos, self.y - 5, 1.5, stroke=0, fill=1)
         
         self.y -= 20 + spacing.section_gap
     
@@ -600,27 +594,63 @@ class PDFRenderer:
         self.y -= block_height + spacing.section_gap
     
     def _render_formula(self, formula: Formula):
-        """Render a math formula in human-readable format."""
+        """Render a math formula in human-readable format with improved Unicode conversion."""
         self._check_page_break(font_sizes.body * 3)
         
         self.y -= spacing.section_gap
         
-        # Convert LaTeX to more readable format
-        readable = formula.latex.replace('\\int', '∫')
+        # Improved LaTeX to Unicode conversion
+        readable = formula.latex
+        
+        # Operators and symbols
+        readable = readable.replace('\\int', '∫')
+        readable = readable.replace('\\sum', '∑')
+        readable = readable.replace('\\prod', '∏')
         readable = readable.replace('\\infty', '∞')
-        readable = readable.replace('\\frac', '')
-        readable = readable.replace('\\sqrt', '√')
+        readable = readable.replace('\\partial', '∂')
+        readable = readable.replace('\\nabla', '∇')
+        
+        # Greek letters
         readable = readable.replace('\\pi', 'π')
-        readable = readable.replace('{', '').replace('}', '')
+        readable = readable.replace('\\alpha', 'α')
+        readable = readable.replace('\\beta', 'β')
+        readable = readable.replace('\\gamma', 'γ')
+        readable = readable.replace('\\delta', 'δ')
+        readable = readable.replace('\\theta', 'θ')
+        readable = readable.replace('\\lambda', 'λ')
+        readable = readable.replace('\\mu', 'μ')
+        readable = readable.replace('\\sigma', 'σ')
+        readable = readable.replace('\\omega', 'ω')
+        
+        # Math operators
+        readable = readable.replace('\\leq', '≤')
+        readable = readable.replace('\\geq', '≥')
+        readable = readable.replace('\\neq', '≠')
+        readable = readable.replace('\\approx', '≈')
+        readable = readable.replace('\\equiv', '≡')
+        readable = readable.replace('\\times', '×')
+        readable = readable.replace('\\div', '÷')
+        readable = readable.replace('\\pm', '±')
+        
+        # Functions with better formatting
+        readable = readable.replace('\\frac{', '(')
+        readable = readable.replace('}{', ')⁄(')
+        readable = readable.replace('\\sqrt{', '√(')
+        readable = readable.replace('\\sqrt', '√')
+        
+        # Clean up braces
+        readable = readable.replace('{', '').replace('}', ')')
+        
+        # Subscripts and superscripts (keep simple)
         readable = readable.replace('_', '₍').replace('^', '⁽')
         
-        # Use larger italic font for formulas
-        formula_size = font_sizes.body + 2
-        self.c.setFont(self.custom_fonts.italic, formula_size)
+        # Use larger monospace font for formulas (better readability)
+        formula_size = font_sizes.body + 4
+        self.c.setFont(self.custom_fonts.code, formula_size)
         self.c.setFillColorRGB(*colors.text_primary)
         
         # Center the formula
-        text_width = self.c.stringWidth(readable, self.custom_fonts.italic, formula_size)
+        text_width = self.c.stringWidth(readable, self.custom_fonts.code, formula_size)
         x_centered = self.x + (self.content_width - text_width) / 2
         
         self.c.drawString(x_centered, self.y - formula_size, readable)

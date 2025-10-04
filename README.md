@@ -9,7 +9,7 @@
 - **🔤 Custom Google Fonts** - Use any font from [Google Fonts](https://fonts.google.com) library
 - **📑 Multiple Content Types** - Headings, paragraphs, lists, tables, code blocks, formulas
 - **🎯 Task Lists** - Checkbox lists with visual completion states
-- **🎨 Ornamental Breaks** - Four artistic separator styles
+- **🎨 Ornamental Breaks** - Delicate rounded dots separator
 - **📐 Exercise Areas** - Ruled lines, dot grids, square grids, blank spaces
 - **🖼️ Image Support** - Embed local files or URLs
 - **📄 Smart Pagination** - Automatic page breaks with content-aware layout
@@ -148,7 +148,7 @@ Documents consist of an array of content blocks rendered sequentially.
 }
 ```
 
-Automatically wraps long text across multiple lines.
+Automatically wraps long text across multiple lines with justification (except last line).
 
 #### Caption
 
@@ -207,7 +207,7 @@ Monospace font with rounded corners and syntax highlighting hints.
 }
 ```
 
-LaTeX notation converted to readable Unicode symbols (∫, ∞, √, π).
+LaTeX notation converted to readable Unicode symbols (∫, ∞, √, π, α, β, γ, ≤, ≥, ×, ÷, etc.). Supports common Greek letters, operators, and fractions.
 
 #### Table
 
@@ -246,15 +246,11 @@ LaTeX notation converted to readable Unicode symbols (∫, ∞, √, π).
 ```json
 {
   "type": "break",
-  "strength": "regular"
+  "strength": "extra_light"
 }
 ```
 
-**Strengths:**
-- `"extra_light"` - Subtle dots
-- `"light"` - Gentle curve
-- `"regular"` - Smooth flowing wave
-- `"strong"` - Thick artistic separator
+**Note:** Only `"extra_light"` (delicate rounded dots) is currently rendered. Other values are accepted but will display as dots.
 
 #### Page Break
 
@@ -357,10 +353,10 @@ Sketchnote/
 
 ### Text Wrapping
 Long text automatically wraps across multiple lines, preventing cropping. Works in:
-- Headings
-- Paragraphs
-- List items
-- Table cells
+- Headings (left-aligned)
+- Paragraphs (justified, except last line)
+- List items (left-aligned)
+- Table cells (left-aligned)
 
 ### Custom Fonts
 Specify any Google Font in the `meta.font_family` field. The system:

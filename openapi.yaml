@@ -365,7 +365,6 @@ components:
       type: object
       required:
         - type
-        - strength
       properties:
         type:
           type: string
@@ -374,11 +373,9 @@ components:
           type: string
           enum: [extra_light, light, regular, strong]
           description: |
-            Ornamental break style (séparateur ornemental):
-            - extra_light: 3 short faint curls (3 courtes boucles légères)
-            - light: long faint S-curve line (ligne en S allongée légère)
-            - regular: long wave line (ligne ondulée)
-            - strong: thick baseline with subtle wobble (ligne de base épaisse avec ondulation subtile)
+            Ornamental break style (note: only 'extra_light' rounded dots style is currently rendered, other values are ignored)
+            - extra_light: 3 delicate dots (recommended)
+            - light, regular, strong: not implemented (will render as dots)
 
     PageBreak:
       type: object
