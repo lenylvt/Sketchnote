@@ -155,6 +155,7 @@ class Card(BaseModel):
     )
     padding_mm: float = Field(default=8.0, ge=0, le=20, description="Internal padding in millimeters")
     border: bool = Field(default=False, description="Draw a subtle border around the card")
+    show: bool = Field(default=True, description="If False, the card and its content are not rendered (invisible)")
 
 
 # Union type for all block types

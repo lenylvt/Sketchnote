@@ -893,7 +893,7 @@ class PDFRenderer:
         self.y = y_bottom - spacing.section_gap
     
     def _render_table(self, table: Table):
-        """Render a table with improved styling."""
+        """Render a table with improved styling and dynamic row heights."""
         # Calculate column widths
         if table.widths:
             total_ratio = sum(table.widths)
@@ -902,9 +902,20 @@ class PDFRenderer:
             col_width = self.content_width / table.columns
             col_widths = [col_width] * table.columns
         
-        # Estimate row heights (increased padding for better readability)
-        row_height = font_sizes.body + spacing.table_cell_padding * 3
-        table_height = len(table.rows) * row_height
+        # Calculate row heights dynamically based on content
+        row_heights = []
+        for row in table.rows:
+            max_lines = 1
+            for col_idx, cell in enumerate(row.cells):
+                if cell:
+                    cell_width = col_widths[col_idx] - 2 * spacing.table_cell_padding
+                    lines = self._wrap_rich_text(cell, cell_width, font_sizes.body)
+                    max_lines = max(max_lines, len(lines))
+            # Row height = number of lines * (font size + line spacing) + padding
+            row_height = max_lines * (font_sizes.body + 2) + spacing.table_cell_padding * 2
+            row_heights.append(row_height)
+        
+        table_height = sum(row_heights)
         
         self._check_page_break(table_height + spacing.section_gap)
         
@@ -923,6 +934,7 @@ class PDFRenderer:
         # Draw rows
         for row_idx, row in enumerate(table.rows):
             current_x = self.x
+            row_height = row_heights[row_idx]
             
             # Header row background (first row)
             if row_idx == 0:
@@ -1102,22 +1114,18 @@ class PDFRenderer:
         The card measures its content first, then checks if it fits on the current page.
         If not, it moves to a new page entirely. Optionally draws a background and border.
         """
+        # If show is False, don't render anything
+        if not card.show:
+            return
+        
         padding_pts = page_config.mm_to_points(card.padding_mm)
         
         # Save current position
         start_y = self.y
         start_x = self.x
         
-        # Create a temporary renderer to measure the card content height
-        temp_y = self.y - padding_pts
-        original_y = self.y
-        
-        # Temporarily adjust margins to account for card padding
-        self.x += padding_pts
-        self.content_width -= 2 * padding_pts
+        # Render content first to measure its height (without changing content_width)
         self.y -= padding_pts
-        
-        # Render content in "measurement mode" by saving positions
         content_start_y = self.y
         
         for block in card.content:
@@ -1125,10 +1133,6 @@ class PDFRenderer:
         
         content_end_y = self.y
         content_height = content_start_y - content_end_y
-        
-        # Restore margins
-        self.x -= padding_pts
-        self.content_width += 2 * padding_pts
         
         # Total card height including padding
         total_card_height = content_height + 2 * padding_pts
@@ -1139,15 +1143,38 @@ class PDFRenderer:
             self.c.showPage()
             self.y = self.page_height - self.margin_top
             start_y = self.y
+            
+            # Re-render content on new page
+            self.y -= padding_pts
+            content_start_y = self.y
+            
+            for block in card.content:
+                self._render_block(block)
+            
+            content_end_y = self.y
+            content_height = content_start_y - content_end_y
+            total_card_height = content_height + 2 * padding_pts
         else:
             # Card fits, restore to start position and render properly
             self.y = start_y
+            
+            # Re-render content at correct position
+            self.y -= padding_pts
+            content_start_y = self.y
+            
+            for block in card.content:
+                self._render_block(block)
+            
+            content_end_y = self.y
+            content_height = content_start_y - content_end_y
+            total_card_height = content_height + 2 * padding_pts
         
         # Draw card background if requested
-        card_top = self.y
-        card_bottom = self.y - total_card_height
+        card_top = start_y
+        card_bottom = start_y - total_card_height
         
         if card.background and card.background != "none":
+            self.c.saveState()
             if card.background == "light":
                 # Very light gray
                 self.c.setFillColorRGB(0.97, 0.97, 0.97)
@@ -1157,28 +1184,18 @@ class PDFRenderer:
             
             self.c.roundRect(start_x, card_bottom, self.content_width, total_card_height,
                            4, stroke=0, fill=1)
-            
-            # Reset fill color
-            self.c.setFillColorRGB(*colors.text_primary)
+            self.c.restoreState()
         
         # Draw border if requested
         if card.border:
+            self.c.saveState()
             self.c.setStrokeColorRGB(*colors.line_light)
             self.c.setLineWidth(0.5)
             self.c.roundRect(start_x, card_bottom, self.content_width, total_card_height,
                            4, stroke=1, fill=0)
+            self.c.restoreState()
         
-        # Now render the actual content
-        self.y = card_top - padding_pts
-        self.x = start_x + padding_pts
-        self.content_width -= 2 * padding_pts
-        
-        for block in card.content:
-            self._render_block(block)
-        
-        # Restore position and margins
-        self.x = start_x
-        self.content_width += 2 * padding_pts
+        # Position is already at the correct place after rendering
         self.y -= padding_pts  # Add bottom padding
 
 
