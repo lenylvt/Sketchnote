@@ -564,6 +564,10 @@ components:
           type: boolean
           default: false
           description: Flag to hint emoji rendering (uses fallback fonts)
+        math:
+          type: boolean
+          default: false
+          description: Treat the span as LaTeX math (inline formula rendering)
 
     Error:
       type: object
